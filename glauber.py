@@ -15,7 +15,7 @@ rng = np.random.default_rng()
 def initialize_spins(Lx,Ly,random=False):
 	spins = np.ones((Lx,Ly))
 	
-	if random: spins = rng.random.choose([-1.,1.],(Lx,Ly))
+	if random: spins = rng.choice([-1,1],Lx*Ly)
 
 	return spins.flatten()
 
