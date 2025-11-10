@@ -3,9 +3,6 @@
 ### 11/01/2025
 
 import numpy as np 
-from matplotlib import pyplot as plt
-import scipy as scp
-import time as time 
 
 
 rng = np.random.default_rng()
@@ -19,7 +16,14 @@ def initialize_spins(Lx,Ly,random=False):
 
 	return spins.flatten()
 
+### This method computes the magnetization of a flattened spin configuration
+def calc_mag(spins):
+	return np.mean(spins,axis=0)
 
+### This is the total energy of a sampled spin configuration
+### This is catastrophically slow for even modest sized systems. Need to implement a running tally update of energy 
+def calc_energy(spins,J_matrix):
+	return 0.5*np.tensordot(spins, J_matrix@spins,axes=(0,0))
 
 ### This method will generate the nearest-neighbor exchange matrix of couplings 
 def nn_coupling(J,Lx,Ly):
@@ -27,7 +31,7 @@ def nn_coupling(J,Lx,Ly):
 	sites = np.arange(Lx*Ly)
 	for r in sites:
 		x = r%Lx 
-		y = r//(Ly-1)
+		y = r//Lx
 
 		rpx = (x+1)%Lx + y*Lx
 		rmx = (x-1)%Lx + y*Lx
@@ -39,7 +43,35 @@ def nn_coupling(J,Lx,Ly):
 		J_matrix[rpy,r] = J 
 		J_matrix[rmy,r] = J 
 
-	return J_matrix 
+	return 0.5*( J_matrix + np.transpose(J_matrix))
+
+### This methof performs time evolution according to Glauber MCMC
+def dynamics(initial_spins,nsteps,J_matrix,T):
+	Nspins = len(initial_spins)
+
+	spin_trajectory = np.zeros((Nspins,nsteps))
+	spin_trajectory[:,0] = initial_spins[:]
+
+	for i in range(1,nsteps):
+		r = rng.choice(np.arange(Nspins))
+
+		p = rng.uniform()
+
+		curie_field = np.sum(J_matrix[r,:]*spin_trajectory[:,i-1])
+
+		spin_trajectory[:,i] = spin_trajectory[:,i-1]
+
+		if p < np.exp(-curie_field*spin_trajectory[r,i-1]/T):
+		    spin_trajectory[r,i] *= -1 
+
+	return spin_trajectory
+
+
+
+
+
+
+
 
 
 
