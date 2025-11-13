@@ -47,6 +47,30 @@ def nn_coupling(J,Lx,Ly):
 
 	return 0.5*( J_matrix + np.transpose(J_matrix))
 
+
+### This method will generate the nearest neighbor couplings but randomize whether they are + or - (p is probability of +)
+def nn_coupling_random(J,p,Lx,Ly):
+	J_matrix = np.zeros((Lx*Ly,Lx*Ly))
+	sites = np.arange(Lx*Ly)
+	for r in sites:
+		x = r%Lx 
+		y = r//Lx
+
+		rpx = (x+1)%Lx + y*Lx
+		rmx = (x-1)%Lx + y*Lx
+		rpy = x%Lx + ( (y+1)%Ly )*Lx
+		rmy = x%Lx + ( (y-1)%Ly )*Lx 
+
+		J_matrix[rpx,r] = rng.choice([J,-J],p=[p,1.-p])
+		J_matrix[rmx,r] = rng.choice([J,-J],p=[p,1.-p]) 
+		J_matrix[rpy,r] = rng.choice([J,-J],p=[p,1.-p])
+		J_matrix[rmy,r] = rng.choice([J,-J],p=[p,1.-p])
+
+		J_matrix[r,r] = 0.
+
+	return 0.5*( J_matrix + np.transpose(J_matrix))
+
+
 ### This methof performs time evolution according to Glauber MCMC
 def dynamics(initial_spins,nsteps,J_matrix,T):
 	Nspins = len(initial_spins)
