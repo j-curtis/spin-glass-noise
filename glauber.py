@@ -43,6 +43,8 @@ def nn_coupling(J,Lx,Ly):
 		J_matrix[rpy,r] = J 
 		J_matrix[rmy,r] = J 
 
+		J_matrix[r,r] = 0.
+
 	return 0.5*( J_matrix + np.transpose(J_matrix))
 
 ### This methof performs time evolution according to Glauber MCMC
@@ -61,7 +63,9 @@ def dynamics(initial_spins,nsteps,J_matrix,T):
 
 		spin_trajectory[:,i] = spin_trajectory[:,i-1]
 
-		if p < np.exp(-curie_field*spin_trajectory[r,i-1]/T):
+		delta_E = -2.*curie_field*spin_trajectory[r,i]
+
+		if p < np.exp(-delta_E/T):
 		    spin_trajectory[r,i] *= -1 
 
 	return spin_trajectory
