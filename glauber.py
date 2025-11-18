@@ -47,6 +47,23 @@ def nn_coupling(J,Lx,Ly):
 
 	return 0.5*( J_matrix + np.transpose(J_matrix))
 
+### This method generates a list of the nn indices of each site -- used for faster lookup when couplings are NN only 
+def nn_indices(Lx,Ly):
+	sites = np.arange(Lx*Ly)
+	nns = np.zeros((4,Lx*Ly),dtype=int) ### This is the list of 4 nn indices of each site stored in the order [+x,+y,-x,-y]
+	for r in sites:
+		x = r%Lx 
+		y = r//Lx
+
+		rpx = (x+1)%Lx + y*Lx
+		rmx = (x-1)%Lx + y*Lx
+		rpy = x%Lx + ( (y+1)%Ly )*Lx
+		rmy = x%Lx + ( (y-1)%Ly )*Lx 
+
+		nns[:,r] = np.array([rpx,rpy,rmx,rmy],dtype=int)
+
+	return nns
+
 
 ### This method will generate the nearest neighbor couplings but randomize whether they are + or - (p is probability of +)
 def nn_coupling_random(J,p,Lx,Ly):
@@ -72,25 +89,35 @@ def nn_coupling_random(J,p,Lx,Ly):
 
 
 ### This methof performs time evolution according to Glauber MCMC
-def dynamics(initial_spins,nsteps,J_matrix,T):
+### By default the number of steps will actually be the number of sweeps with Lx x Ly individual steps 
+def dynamics(initial_spins,nsweeps,J_matrix,T):
 	Nspins = len(initial_spins)
 
-	spin_trajectory = np.zeros((Nspins,nsteps))
+	spin_trajectory = np.zeros((Nspins,nsweeps))
 	spin_trajectory[:,0] = initial_spins[:]
 
-	for i in range(1,nsteps):
+	### Implements a single step which there are then Lx x Ly of in a sweep
+	def MCstep(spins):
 		r = rng.choice(np.arange(Nspins))
 
 		p = rng.uniform()
 
-		curie_field = np.sum(J_matrix[r,:]*spin_trajectory[:,i-1])
+		curie_field = np.sum(J_matrix[r,:]*spins[:])
 
-		spin_trajectory[:,i] = spin_trajectory[:,i-1]
-
-		delta_E = -2.*curie_field*spin_trajectory[r,i]
+		delta_E = -2.*curie_field*spins[r]
 
 		if p < np.exp(-delta_E/T):
-		    spin_trajectory[r,i] *= -1 
+			spins[r] *= -1 
+
+		return spins
+
+	for i in range(1,nsweeps):
+		spins = spin_trajectory[:,i-1]
+		for j in range(Nspins):
+			spins = MCstep(spins)
+
+		spin_trajectory[:,i] = spins
+
 
 	return spin_trajectory
 
