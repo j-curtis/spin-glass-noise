@@ -88,9 +88,10 @@ def nn_coupling_random(J,p,Lx,Ly):
 	return 0.5*( J_matrix + np.transpose(J_matrix))
 
 
-### This methof performs time evolution according to Glauber MCMC
+### This method performs time evolution according to Glauber MCMC
 ### By default the number of steps will actually be the number of sweeps with Lx x Ly individual steps 
-def dynamics(initial_spins,nsweeps,J_matrix,T):
+### If nn_indices is passed we will use a local update which only checks nearest neighbor indices which are stored in the array passed as indices_of_r = [nn direction,r]
+def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None):
 	Nspins = len(initial_spins)
 
 	spin_trajectory = np.zeros((Nspins,nsweeps))
@@ -102,7 +103,16 @@ def dynamics(initial_spins,nsweeps,J_matrix,T):
 
 		p = rng.uniform()
 
-		curie_field = np.sum(J_matrix[r,:]*spins[:])
+		if nn_indices is None:
+			curie_field = np.sum(J_matrix[r,:]*spins[:])
+
+		else:
+			nnpx = nn_indices[0,r]
+			nnpy = nn_indices[1,r]
+			nnmx = nn_indices[2,r]
+			nnmy = nn_indices[3,r]
+
+			curie_field = J_matrix[nnpx,r]*spins[nnpx] + J_matrix[nnpy,r]*spins[nnpy] +J_matrix[nnmx,r]*spins[nnmx] +J_matrix[nnmy,r]*spins[nnmy] 
 
 		delta_E = -2.*curie_field*spins[r]
 
