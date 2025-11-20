@@ -78,14 +78,15 @@ def nn_coupling_random(J,p,Lx,Ly):
 		rpy = x%Lx + ( (y+1)%Ly )*Lx
 		rmy = x%Lx + ( (y-1)%Ly )*Lx 
 
+		### We should only count the + bonds otherwise we will double count. This is a problem when the couplings are random and we later symmetrize as it can lead to cancellations that are spurious
 		J_matrix[rpx,r] = rng.choice([J,-J],p=[p,1.-p])
-		J_matrix[rmx,r] = rng.choice([J,-J],p=[p,1.-p]) 
+		#J_matrix[rmx,r] = rng.choice([J,-J],p=[p,1.-p]) 
 		J_matrix[rpy,r] = rng.choice([J,-J],p=[p,1.-p])
-		J_matrix[rmy,r] = rng.choice([J,-J],p=[p,1.-p])
+		#J_matrix[rmy,r] = rng.choice([J,-J],p=[p,1.-p])
 
 		J_matrix[r,r] = 0.
 
-	return 0.5*( J_matrix + np.transpose(J_matrix))
+	return J_matrix + np.transpose(J_matrix)
 
 
 ### This method performs time evolution according to Glauber MCMC
