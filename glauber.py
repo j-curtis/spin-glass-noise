@@ -3,6 +3,7 @@
 ### 11/01/2025
 
 import numpy as np 
+import time 
 
 
 rng = np.random.default_rng()
@@ -133,8 +134,45 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None):
 	return spin_trajectory
 
 
+### This method will anneal over a given temperature schedule and generate one replica trajectory for the dynamics over this annealing time 
+### Returns the spin trajectories and the times for each temperature run
+### Allows also for multiple replicas 
+def anneal_dynamics(J_matrix,nn_indices,nsweeps,temperature_schedule,nreplicas,initial_spins = None):
 
+	nTs = len(temperature_schedule)
+	nspins = len(J_matrix.shape[0])
 
+	### We generate an output array 
+	spins = np.zeros((nreplicas,nTs,nspins,nsweeps))
+	times = np.zeros((nreplicas,nTs))
+
+	for a in range(nreplicas):
+
+		### If we don't pass a fixed initial condition we will use a random one which is different for each replica 
+		if initial_spins is None: 
+			initial = initialize_spins(nspins,1,random=True)
+
+		### If we are given a particular initial condition this will make a copy which we use for the initial condition of the annealing schedule 
+		else:
+			initial = initialize_spins.copy()
+
+		### The shape is just Lx x Ly = nspins and since it is flattened anyways we only need the product
+
+		for n in range(nTs):
+
+			T = temperature_schedule[n]
+
+			t0 = time.time()
+			spins[a,n,:,:] = glauber.dynamics(initial,nsweeps,J_matrix,T,nn_matrix)
+			t1 = time.time()
+
+			times[n] = t1-t0
+			#print(f"Replica {i}, temperature {(Ts[n]):0.2f}, time: {(t1-t0):0.2f}s")
+
+			### the start of the next chunk of the schedule is the end of this one 
+			initial = spins[a,n,:,-1]
+
+	return spins, times 
 
 
 
