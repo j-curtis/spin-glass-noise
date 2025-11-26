@@ -136,11 +136,11 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None):
 
 ### This method will anneal over a given temperature schedule and generate one replica trajectory for the dynamics over this annealing time 
 ### Returns the spin trajectories and the times for each temperature run
-### Allows also for multiple replicas 
-def anneal_dynamics(J_matrix,nn_indices,nsweeps,temperature_schedule,nreplicas,initial_spins = None):
+### Allows also for multiple replicas though default is one since we will paralellize this using demler_tools to instantiate multiple processes 
+def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,initial_spins = None,verbose=False):
 
 	nTs = len(temperature_schedule)
-	nspins = len(J_matrix.shape[0])
+	nspins = J_matrix.shape[0]
 
 	### We generate an output array 
 	spins = np.zeros((nreplicas,nTs,nspins,nsweeps))
@@ -163,16 +163,20 @@ def anneal_dynamics(J_matrix,nn_indices,nsweeps,temperature_schedule,nreplicas,i
 			T = temperature_schedule[n]
 
 			t0 = time.time()
-			spins[a,n,:,:] = glauber.dynamics(initial,nsweeps,J_matrix,T,nn_matrix)
+			spins[a,n,:,:] = dynamics(initial,nsweeps,J_matrix,T,nn_matrix)
 			t1 = time.time()
 
-			times[n] = t1-t0
-			#print(f"Replica {i}, temperature {(Ts[n]):0.2f}, time: {(t1-t0):0.2f}s")
+			times[a,n] = t1-t0
+			if verbose: print(f"Replica {a}, temperature {T:0.2f}, time: {(t1-t0):0.2f}s")
 
 			### the start of the next chunk of the schedule is the end of this one 
 			initial = spins[a,n,:,-1]
 
-	return spins, times 
+	if nreplicas == 1:
+		return spins[0,...], times[0,...]
+
+	else:
+		return spins, times 
 
 
 
