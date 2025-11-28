@@ -9,14 +9,15 @@ import glauber
 
 
 ### Compatibility with demler_tools
-def run_sims(save_filename,Lx,Ly,nsweeps,temps,replica,J_matrix=None):
+def run_sims(save_filename,Lx,Ly,nsweeps,temps,replica,J_seed = None):
 
 	### If a specific J matrix is not given we will by default generate an FM one  
 	
 	### We generate the J matrices and the nn coupling matrix 
-	if J_matrix is None:
+	if J_seed is None:
 		J_matrix = glauber.nn_coupling(-1.,Lx,Ly)
-	
+	else:
+		J_matrix = glauber.nn_coupling_random(-1.,0.5,Lx,Ly,J_seed)
 	
 	nns = glauber.nn_indices(Lx,Ly)
 

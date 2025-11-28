@@ -67,7 +67,11 @@ def nn_indices(Lx,Ly):
 
 
 ### This method will generate the nearest neighbor couplings but randomize whether they are + or - (p is probability of +)
-def nn_coupling_random(J,p,Lx,Ly):
+### Allows to pass a seed to generate deterministic disorder configs 
+def nn_coupling_random(J,p,Lx,Ly,seed=None):
+	rng = np.random.default_rng()
+	if seed is not None: rng = np.random.default_rng(seed) 
+	
 	J_matrix = np.zeros((Lx*Ly,Lx*Ly))
 	sites = np.arange(Lx*Ly)
 	for r in sites:
