@@ -5,6 +5,8 @@
 import numpy as np 
 import time 
 
+from scipy import ndimage as ndi 
+
 
 rng = np.random.default_rng()
 
@@ -19,7 +21,7 @@ def initialize_spins(Lx,Ly,random=False):
 
 ### This method computes the magnetization of a flattened spin configuration
 def calc_mag(spins):
-	return np.mean(spins,axis=0)
+	return np.mean(spins,axis=-2)
 
 ### This is the total energy of a sampled spin configuration
 ### This is catastrophically slow for even modest sized systems. Need to implement a running tally update of energy 
@@ -189,8 +191,21 @@ def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,
 
 
 
+### Some analysis methods 
 
 
+### Performs a moving average over a 1d time series 
+def moving_avg(time_series,window):
+	return ndi.uniform_filter1d(time_series,window,mode='constant')
+	
+### Extracts edwards anderson replica order parameter 
+### This method will compute the edwards-anderson replica correlation function averaged over the sample volume 
+def calc_ea(spins):
+	### We assume spins is a replica array of signature [replica, annealing schedule, spins, nsweeps]
+	qea = np.einsum('airt,birt->abit',spins,spins)/float(spins.shape[-1]) ### This will sum over the spins spatially but tracks the time and annealing epoch and keeps both intra and interreplica correlations as a matrix 
+	### Also normalizes by sample volume 
+
+	return qea 
 
 
 
