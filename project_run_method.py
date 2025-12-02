@@ -27,5 +27,5 @@ def run_sims(save_filename,Lx,Ly,nsweeps,temps,replica,J_seed = None):
 	spins,times = glauber.anneal_dynamics(J_matrix,nns,nsweeps,temps)
 	
 	with open(save_filename, 'wb') as out_file:
-        	pickle.dump((spins,J_matrix), out_file)
+        	pickle.dump((spins,J_matrix), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
         	

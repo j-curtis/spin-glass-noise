@@ -97,11 +97,15 @@ def nn_coupling_random(J,p,Lx,Ly,seed=None):
 ### This method performs time evolution according to Glauber MCMC
 ### By default the number of steps will actually be the number of sweeps with Lx x Ly individual steps 
 ### If nn_indices is passed we will use a local update which only checks nearest neighbor indices which are stored in the array passed as indices_of_r = [nn direction,r]
-def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None):
+### If reseed is true this will reseed the rng on every call 
+def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None,reseed=True):
 	Nspins = len(initial_spins)
 
 	spin_trajectory = np.zeros((Nspins,nsweeps))
 	spin_trajectory[:,0] = initial_spins[:]
+	
+	if reseed:
+		rng = np.random.default_rng() ### We reinstantiate the rng 
 
 	### Implements a single step which there are then Lx x Ly of in a sweep
 	def MCstep(spins):
