@@ -111,6 +111,7 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None,reseed=True):
 
 	### Implements a single step which there are then Lx x Ly of in a sweep
 	def MCstep(spins):
+		tmp = spins.copy()
 		r = rng.choice(np.arange(Nspins))
 
 		p = rng.uniform()
@@ -127,11 +128,17 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None,reseed=True):
 			curie_field = J_matrix[nnpx,r]*spins[nnpx] + J_matrix[nnpy,r]*spins[nnpy] +J_matrix[nnmx,r]*spins[nnmx] +J_matrix[nnmy,r]*spins[nnmy] 
 
 		delta_E = -2.*curie_field*spins[r]
+		
+		betadE = delta_E/T
+		
+		### Metropolis
+		#if p < np.exp(-delta_E/T):
+		
+		### Glauber dynamics has probability of flip e^(-beta dE)/(1+ e^(-beta dE))
+		if p < np.exp(-betadE)/(1.+np.exp(-betadE)):
+			tmp[r] *= -1 
 
-		if p < np.exp(-delta_E/T):
-			spins[r] *= -1 
-
-		return spins
+		return tmp
 
 	for i in range(1,nsweeps):
 		spins = spin_trajectory[:,i-1]
@@ -149,7 +156,10 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None,reseed=True):
 ### Allows also for multiple replicas though default is one since we will paralellize this using demler_tools to instantiate multiple processes 
 def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,initial_spins = None,verbose=False):
 
+	if not isinstance(temperature_schedule,np.ndarray): temperature_schedule = np.array([temperature_schedule]) ### Recast single float as an array of length 1 for technical reasons
+
 	nTs = len(temperature_schedule)
+	
 	nspins = J_matrix.shape[0]
 
 	### We generate an output array 
@@ -164,7 +174,7 @@ def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,
 
 		### If we are given a particular initial condition this will make a copy which we use for the initial condition of the annealing schedule 
 		else:
-			initial = initialize_spins.copy()
+			initial = initial_spins.copy()
 
 		### The shape is just Lx x Ly = nspins and since it is flattened anyways we only need the product
 
@@ -200,9 +210,11 @@ def moving_avg(time_series,window):
 	
 ### Extracts edwards anderson replica order parameter 
 ### This method will compute the edwards-anderson replica correlation function averaged over the sample volume 
-def calc_ea(spins):
+def calc_ea(spins,samplestep=100,chop=500):
 	### We assume spins is a replica array of signature [replica, annealing schedule, spins, nsweeps]
-	qea = np.einsum('airt,birt->abit',spins,spins)/float(spins.shape[-1]) ### This will sum over the spins spatially but tracks the time and annealing epoch and keeps both intra and interreplica correlations as a matrix 
+	### First we sample over time points
+	s = np.mean(spins[...,chop:-1:samplestep],axis=-1) ### Chop off first few points and then sample every samplestep point
+	qea = np.einsum('air,bir->abi',s,s)/float(s.shape[-1]) ### This will sum over the spins spatially but tracks the time and annealing epoch and keeps both intra and interreplica correlations as a matrix 
 	### Also normalizes by sample volume 
 
 	return qea 
