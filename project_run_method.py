@@ -1,4 +1,3 @@
-### Code to solve 2+1 d quantum monte carlo XY model on square lattice 
 ### Jonathan Curtis
 ### 11/22/24
 

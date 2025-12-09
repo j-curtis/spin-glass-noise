@@ -147,7 +147,6 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None,reseed=True):
 
 		spin_trajectory[:,i] = spins
 
-
 	return spin_trajectory
 
 
