@@ -10,6 +10,8 @@ import glauber
 
 ### Compatibility with demler_tools
 def run_sims(save_filename,Lx,Ly,nsweeps,temps,replica,J_seed = None,start_polarized = False):
+	J_seed = int(J_seed) 
+	replica = int(replica) 
 
 	### If a specific J matrix is not given we will by default generate an FM one  
 	
