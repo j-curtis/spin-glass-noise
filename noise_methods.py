@@ -30,4 +30,20 @@ def calc_local_noise(spins,ds,Lx,Ly):
     
    
    
-   
+### Computes the echo phase for a given noise trajectory 
+### times = (t0,...,tf) where t0 and tf are the initial and final pi/2 pulses and intermediate values are optional pi echo times (as integers)
+def calc_echo_phase(noise,times):
+	t0 = times[0]
+	tpis = times[1:-1]
+	tf = times[-1] 
+
+	filter_func = np.zeros(noise.shape[-1])
+	filter_func[t0:tf] = 1. 
+
+	for i in tpis:
+		filter_func[t0:i] *= -1 
+
+	return np.tensordot(noise,filter_func,axes=[-1,0]) 
+
+    
+    
