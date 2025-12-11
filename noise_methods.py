@@ -22,7 +22,12 @@ def calc_local_noise(spins,ds,Lx,Ly):
 	kernels = (2.*ds[None,:]**2 - R2[:,None])/( R2[:,None] + ds[None,:]**2)**1.5 ### Has shape [Nspins, Nds] 
 
 	noise = np.tensordot(spins,kernels,axes=[-2,0])
+	
+	### Now we swap the last two axes so that the time axis is last as always 
+	noise = np.swapaxes(noise,-1,-2) 
 
 	return noise 
     
-    
+   
+   
+   

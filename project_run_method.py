@@ -42,7 +42,7 @@ def run_sims(save_filename,Lx,Ly,nsweeps,temps,replica,J_seed = None,start_polar
 ### Processing scripts for quench and annealing runs 
 ### Recover and process jobs for quench dynamics 
 ### Recovers also only a single seed 
-def process_quench(timestamp,get_seed=0):
+def process_quench(timestamp,get_seed=0,get_replicas=None):
 	print("Recovering quench calculation.")
 	### We expect that for quench each run will be one temperature and possibly a few replicas of this 
 
@@ -91,12 +91,16 @@ def process_quench(timestamp,get_seed=0):
 			jobs_by_temp[temp] = [ job ]
 		else:
 		    	jobs_by_temp[temp].append(job) 
+		
+		if get_replicas is None or replica in get_replicas:
+			if replica not in jobs_by_replica.keys():
+		    		jobs_by_replica[replica] = [ job ]
 
-		if replica not in jobs_by_replica.keys():
-            		jobs_by_replica[replica] = [ job ]
-
+			else:
+		    		jobs_by_replica[replica].append(job) 
+		    		
 		else:
-            		jobs_by_replica[replica].append(job) 
+			continue
     
 		spins_stacked_replica = []
 		for replica in replicas:
