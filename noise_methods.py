@@ -15,11 +15,11 @@ def calc_local_noise(spins,ds,Lx,Ly):
 
 	X,Y = np.meshgrid(np.arange(Lx)-Lx//2, np.arange(Ly)-Ly//2,indexing='ij')
 
-	R2 = np.sqrt(X**2 + Y**2) 
+	R = np.sqrt(X**2 + Y**2) 
 
-	R2 = R2.ravel() 
+	R = R2.ravel() 
 
-	kernels = (2.*ds[None,:]**2 - R2[:,None])/( R2[:,None] + ds[None,:]**2)**1.5 ### Has shape [Nspins, Nds] 
+	kernels = (2.*ds[None,:]**2 - R[:,None]**2)/( R[:,None]**2 + ds[None,:]**2)**2.5 ### Has shape [Nspins, Nds] 
 
 	noise = np.tensordot(spins,kernels,axes=[-2,0])
 	
