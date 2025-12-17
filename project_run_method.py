@@ -5,6 +5,7 @@ import numpy as np
 from scipy import integrate as intg
 import pickle 
 import glauber
+import noise_methods as nm 
 
 from demler_tools.file_manager import path_management, file_management, io
 
@@ -122,7 +123,7 @@ def process_quench(timestamp,get_seed=0,get_replicas=None):
     
 ### Recover and process jobs for annealed dynamics 
 ### Recovers all replicas and seeds 
-def process_anneal(timestamp,get_seed=0): 
+def process_anneal(timestamp,get_seed=0,get_replicas=None): 
 	print("Recovering anneal calculation.")
 	### First lets extract all of the different J matrices 
 	job_no = io.recover_job_no(timestamp = timestamp)
@@ -130,10 +131,16 @@ def process_anneal(timestamp,get_seed=0):
 
 	seeds = [] ### We will also use a list to store the different seeds
 	jobs_by_seed = {} ### Jobs which have the given seed 
-	### Get all the different seeds and replicas for each job with a particular seed
+	
+	replicas_by_job = {}
+	
+	### Get all the different seeds and replicas for each job with a particular seed and replica 
 	for job in range(job_no):
 		inputs,data = io.get_results(timestamp=timestamp,run_index=job)
 		seed = str(int(inputs['J_seed']))
+		replica = int(inputs['replica'])
+		
+		replicas_by_job[job] = replica
 
 		if seed not in seeds: 
 			seeds.append(seed) 
@@ -147,6 +154,9 @@ def process_anneal(timestamp,get_seed=0):
 	temps = [] 
 	jobs = jobs_by_seed[seeds[get_seed]]
 	for job in jobs:
+		if get_replicas is not None and replicas_by_job[job] not in get_replicas:
+			continue 
+	
 		inputs, data = io.get_results(timestamp = timestamp,run_index = job)
 		spins, J = data    
 
