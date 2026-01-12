@@ -151,6 +151,7 @@ def process_anneal(timestamp,get_seed=0,get_replicas=None):
 			(jobs_by_seed[seed]).append(job)
     
 	spins_stacked = [] 
+	energies_stacked = []
     
 	temps = [] 
 	jobs = jobs_by_seed[seeds[get_seed]]
@@ -167,11 +168,13 @@ def process_anneal(timestamp,get_seed=0,get_replicas=None):
 		replica= inputs['replica']
 		print(f"Job: {job}, replica: {replica}, temps: {temps}, seed: {seed}")
 		spins_stacked.append(spins) 
+		energies_stacked.append(energies)
     
 	### Now we stack the spins by replica 
 	spins_stacked= np.stack(spins_stacked,axis=0) 
+	energies_stacked = np.stack(energies_stacked,axis=0)
 	temps = np.array(temps)
 
-	return temps, spins_stacked
+	return temps, spins_stacked, energies_stacked
 
 
