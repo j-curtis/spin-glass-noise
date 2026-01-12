@@ -73,6 +73,7 @@ def process_quench(timestamp,get_seed=0,get_replicas=None):
 	jobs_by_temp = {} ### Dictionary with jobs for each temperature
 	jobs_by_replica = {} ### Dictionary with jobs for each replica 
 	spins_by_job = {} ### Store entries with key given by job number 
+	energies_by_job = {} ### Store energies with key given by job number 
 
 	### Only loop over jobs with the correct seed 
 	for job in jobs:
@@ -88,6 +89,7 @@ def process_quench(timestamp,get_seed=0,get_replicas=None):
 		print(f"Job: {job}, replica: {replica}, temp: {temp}, seed: {seed}")
 
 		spins_by_job[job] = spins[0,...]
+		energies_by_job[job] = energies[0,...]
 
 		if temp not in jobs_by_temp.keys():
 			jobs_by_temp[temp] = [ job ]
@@ -105,20 +107,27 @@ def process_quench(timestamp,get_seed=0,get_replicas=None):
 			continue
     
 		spins_stacked_replica = []
+		energies_stacked_replica = [] 
 		for replica in replicas:
 			spins_stacked_temp = []
+			energies_stacked_temp = []
 			for temp in temps:
 				for job in jobs_by_temp[temp]:
-					if job in jobs_by_replica[replica]: spins_stacked_temp.append(spins_by_job[job])
+					if job in jobs_by_replica[replica]: 
+						spins_stacked_temp.append(spins_by_job[job])
+						energies_stacked_temp.append(energies_by_job[job])
 		    
 			spins_stacked_temp = np.stack(spins_stacked_temp) 
+			energies_stacked_temp = np.stack(energies_stacked_temp)
 
 			spins_stacked_replica.append(spins_stacked_temp) 
+			energies_stacked_replica.append(energies_stacked_temp)
 
 	spins = np.stack(spins_stacked_replica) 
+	energies = np.stack(energies_stacked_replica)
 	temps = np.array(temps) 
 	    
-	return temps, spins
+	return temps, spins, energies
 
 
     
