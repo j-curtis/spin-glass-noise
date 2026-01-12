@@ -30,15 +30,16 @@ def run_sims(save_filename,Lx,Ly,nsweeps,temps,replica,J_seed = None,start_polar
 	### By default this will use random initial conditions for each replica 
 	if start_polarized:
 		polarized = glauber.initialize_spins(Lx,Ly)
-		spins,times = glauber.anneal_dynamics(J_matrix,nns,nsweeps,temps,initial_spins=polarized)
+		spins,times,energies = glauber.anneal_dynamics(J_matrix,nns,nsweeps,temps,initial_spins=polarized)
 		
 	else:
-		spins,times = glauber.anneal_dynamics(J_matrix,nns,nsweeps,temps)
+		spins,times,energies = glauber.anneal_dynamics(J_matrix,nns,nsweeps,temps)
 	
 	with open(save_filename, 'wb') as out_file:
-        	pickle.dump((spins,J_matrix), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
+        	pickle.dump((spins,energies,J_matrix), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
         	
         	
+
         	
 ### Processing scripts for quench and annealing runs 
 ### Recover and process jobs for quench dynamics 
@@ -76,7 +77,7 @@ def process_quench(timestamp,get_seed=0,get_replicas=None):
 	### Only loop over jobs with the correct seed 
 	for job in jobs:
 		inputs, data = io.get_results(timestamp = timestamp,run_index = job)
-		spins, J = data
+		spins, energies,J = data
 
 		replica = int(inputs['replica'])
 		temp = inputs['temps']
@@ -158,7 +159,7 @@ def process_anneal(timestamp,get_seed=0,get_replicas=None):
 			continue 
 	
 		inputs, data = io.get_results(timestamp = timestamp,run_index = job)
-		spins, J = data    
+		spins,energies, J = data    
 
 		temps = inputs['temps']
 

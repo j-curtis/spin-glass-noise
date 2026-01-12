@@ -106,6 +106,11 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None,reseed=True):
 	spin_trajectory = np.zeros((Nspins,nsweeps))
 	spin_trajectory[:,0] = initial_spins[:]
 	
+	energy = np.zeros(nsweeps)
+	
+	### Just first time step we compute the total energy for the entire system
+	energy[0] = calc_energy(initial_spins,J_matrix)
+	
 	if reseed:
 		rng = np.random.default_rng() ### We reinstantiate the rng 
 
@@ -134,20 +139,28 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None,reseed=True):
 		### Metropolis
 		#if p < np.exp(-delta_E/T):
 		
+		betadE_return = 0.
+		
 		### Glauber dynamics has probability of flip e^(-beta dE)/(1+ e^(-beta dE))
 		if p < np.exp(-betadE)/(1.+np.exp(-betadE)):
 			tmp[r] *= -1 
+			betadE_return = betadE
 
-		return tmp
+		return tmp, betadE_return 
 
 	for i in range(1,nsweeps):
 		spins = spin_trajectory[:,i-1]
+		
+		energy_change = 0. 
+		
 		for j in range(Nspins):
-			spins = MCstep(spins)
+			spins, betadE = MCstep(spins)
+			energy_change += betadE*T
 
 		spin_trajectory[:,i] = spins
+		energy[i] = energy[i-1] + energy_change
 
-	return spin_trajectory
+	return spin_trajectory, energy 
 
 
 ### This method will anneal over a given temperature schedule and generate one replica trajectory for the dynamics over this annealing time 
@@ -163,6 +176,7 @@ def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,
 
 	### We generate an output array 
 	spins = np.zeros((nreplicas,nTs,nspins,nsweeps))
+	energies = np.zeros((nreplicas,nTs,nsweeps))
 	times = np.zeros((nreplicas,nTs))
 
 	for a in range(nreplicas):
@@ -182,7 +196,7 @@ def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,
 			T = temperature_schedule[n]
 
 			t0 = time.time()
-			spins[a,n,:,:] = dynamics(initial,nsweeps,J_matrix,T,nn_matrix)
+			spins[a,n,:,:], energies[a,n,:] = dynamics(initial,nsweeps,J_matrix,T,nn_matrix)
 			t1 = time.time()
 
 			times[a,n] = t1-t0
@@ -192,10 +206,10 @@ def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,
 			initial = spins[a,n,:,-1]
 
 	if nreplicas == 1:
-		return spins[0,...], times[0,...]
+		return spins[0,...], times[0,...], energies[0,...]
 
 	else:
-		return spins, times 
+		return spins, times, energies
 
 
 

@@ -65,3 +65,4 @@ def calc_gaussian_spectrum(noise,chop_size):
 	
 	### Average the spectrum over replicas 
 	return ws, np.mean(spectrum,axis=0)
+	
