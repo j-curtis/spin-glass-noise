@@ -78,8 +78,13 @@ def process_quench(timestamp,get_seed=0,get_replicas=None):
 	### Only loop over jobs with the correct seed 
 	for job in jobs:
 		inputs, data = io.get_results(timestamp = timestamp,run_index = job)
-		spins, energies,J = data
-
+		try:
+			spins, energies,J = data
+		except:
+			spins, J = data
+			energies = np.array([ None ])
+			print("Legacy dataset, setting energies to None")
+			
 		replica = int(inputs['replica'])
 		temp = inputs['temps']
 
@@ -169,7 +174,12 @@ def process_anneal(timestamp,get_seed=0,get_replicas=None):
 			continue 
 	
 		inputs, data = io.get_results(timestamp = timestamp,run_index = job)
-		spins,energies, J = data    
+		try:
+			spins,energies, J = data  
+		except:
+			print("Legacy dataset, setting energy data to None")
+			spins,J = data 
+			energies = None   
 
 		temps = inputs['temps']
 
