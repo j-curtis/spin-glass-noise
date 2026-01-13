@@ -32,7 +32,7 @@ def calc_local_noise(spins,ds,Lx,Ly):
 	noise = np.swapaxes(noise,-1,-2) 
 
 	return noise 
-    
+
    
    
 ### Computes the echo phase for a given noise trajectory 

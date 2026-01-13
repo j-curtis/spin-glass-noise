@@ -72,7 +72,8 @@ def run_sims(save_filename,Lx,Ly,nsweeps,temps,distances,replica,J_seed = None,s
 	
 	sample_step = 30 ### Sample every ___ steps 
 	chop = int(nsweeps//5) ### Chop off first __% of each trajectory 
-	qea = glauber.calc_ea(spins,sample_step,chop) 
+
+	qea = glauber.calc_frozen_moment(spins,sample_step,chop) 
 	
 	noise = nm.calc_local_noise(spins,distances,Lx,Ly) 
 	

@@ -221,7 +221,19 @@ def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,
 def moving_avg(time_series,window):
 	return ndi.uniform_filter1d(time_series,window,mode='constant')
 	
-### Extracts edwards anderson replica order parameter 
+### Extracts the single-replica frozen moment edwards-anderson order parameter 
+def calc_frozen_moment(spins,chop=500,step=100):
+	### We assume spins is a replica array of signature [annealing schedule, spins, nsweeps]
+	### First we sample over time points
+	s = np.mean(spins[...,chop:-1:step],axis=-1) ### Chop off first few points and then sample every step point
+
+	qea = np.mean(s*s,axis=-1) ### This will average the frozen-moment squared over the sample volume  
+
+	return qea 
+	
+	
+	
+### Extracts edwards anderson replica order parameter across different replicas 
 ### This method will compute the edwards-anderson replica correlation function averaged over the sample volume 
 def calc_ea(spins,samplestep=100,chop=500):
 	### We assume spins is a replica array of signature [replica, annealing schedule, spins, nsweeps]
