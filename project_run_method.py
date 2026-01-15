@@ -71,9 +71,9 @@ def run_sims(save_filename,Lx,Ly,nsweeps,temps,distances,replica,J_seed = None,s
 	magnetization = glauber.calc_mag(spins) ### Extract magnetization dynamics 
 	
 	sample_step = 1 ### Sample every ___ steps 
-	chop = int(nsweeps//5) ### Chop off first __% of each trajectory 
+	sample_chop = int(nsweeps//5) ### Chop off first __% of each trajectory 
 
-	qea = glauber.calc_frozen_moment(spins,sample_step,chop) 
+	qea = glauber.calc_frozen_moment(spins,sample_chop,sample_step) 
 	
 	noise = nm.calc_local_noise(spins,distances,Lx,Ly) 
 	
