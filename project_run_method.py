@@ -70,7 +70,7 @@ def run_sims(save_filename,Lx,Ly,nsweeps,temps,distances,replica,J_seed = None,s
 	
 	magnetization = glauber.calc_mag(spins) ### Extract magnetization dynamics 
 	
-	sample_step = 30 ### Sample every ___ steps 
+	sample_step = 1 ### Sample every ___ steps 
 	chop = int(nsweeps//5) ### Chop off first __% of each trajectory 
 
 	qea = glauber.calc_frozen_moment(spins,sample_step,chop) 
@@ -313,7 +313,77 @@ def process_annealed_spectra(timestamp,distances,chop_size,get_seed=0,get_replic
 	
 
 
+### Recover and process jobs for annealed dynamics with compactified data structures 
+### Recovers all replicas and seeds 
+def process_anneal_observables(timestamp,get_seed=0): 
+	print(f"Recovering observables from anneal calculation, timestamp {timestamp}.")
+	### First lets extract all of the different J matrices 
+	job_no = io.recover_job_no(timestamp = timestamp)
+	print(f"Total jobs: {job_no}")
 
+	seeds = [] ### We will also use a list to store the different seeds
+	jobs_by_seed = {} ### Jobs which have the given seed 
+	
+	replicas_by_job = {}
+	
+	### Get all the different seeds and replicas for each job with a particular seed and replica 
+	for job in range(job_no):
+		inputs,data = io.get_results(timestamp=timestamp,run_index=job)
+		seed = str(int(inputs['J_seed']))
+		replica = int(inputs['replica'])
+		Lx = int(inputs['Lx'])
+		Ly = int(inputs['Ly'])
+		
+		replicas_by_job[job] = replica
+
+		if seed not in seeds: 
+			seeds.append(seed) 
+			jobs_by_seed[seed] = [ job ]
+
+		else:
+			(jobs_by_seed[seed]).append(job)
+
+	energy = []
+	magnetization = [] 
+	q_ea = []
+	noise = [] 
+    
+	temps = [] 
+	distances = [] 
+	jobs = jobs_by_seed[seeds[get_seed]]
+
+	for job in jobs:
+
+		inputs, data = io.get_results(timestamp = timestamp,run_index = job)
+		try:
+			J, energy_tmp, magnetization_tmp, q_ea_tmp, noise_tmp = data  
+			energy.append(energy_tmp)
+			magnetization.append(magnetization_tmp)
+			q_ea.append(q_ea_tmp)
+			noise.append(noise_tmp) 
+
+		except:
+			print("Error parsing data.")
+
+		temps = inputs['temps']
+		distances = inputs['distances']
+
+		seed = str(int(inputs['J_seed']))
+		replica= inputs['replica']
+		#print(f"Job: {job} loaded.") 
+
+    
+	### Now we stack the spins by replica 
+	print("Stacking data")
+	energy = np.stack(energy,axis=0)
+	magnetization = np.stack(magnetization,axis=0)
+	q_ea = np.stack(q_ea,axis=0)
+	noise = np.stack(noise,axis=0) 
+
+	temps = np.array(temps)
+	distances = np.array(distances)
+
+	return (Lx,Ly),temps,distances,energy,magnetization,q_ea,noise
 
 
 
