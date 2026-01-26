@@ -16,6 +16,13 @@ plt.rc('axes', labelsize=18)
 plt.rc('lines', linewidth=2.5)
 plt.rc('figure',figsize=(23,10))
 
+
+def temp_colors(temps):
+	### Returns a color scale illustrating a series of temperatures 
+	temp_clrs = cm.RdBu((max(temps) - temps[:])/(max(temps) -min(temps))) ### Plot color schemes coding temperature
+
+	return temp_clrs
+
 def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 	### Generates plots of energy and magnetization across the annealing schedule 
 	### Selects just a single replica or all replicas 
@@ -56,7 +63,7 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 
 		axs[0].set_ylabel(r'Energy [$J$]')
 		axs[1].set_ylabel(r'Magnetization')
-		axs[1].set_xlabel(r'Time steps')
+		axs[1].set_xlabel(r'$t$ [MCS]')
 
 
 		### Extract y ranges 
@@ -103,7 +110,7 @@ def plot_noise_spectra(temps,distances,noise):
 		fig, ax = plt.subplots(1)
 		for j in range(0,ntemps,2):
 			ax.plot(ws,spectrum[j,i,:],color=temp_clrs[j],label=r'$T/J=$'+f"{temps[j]:0.2f}")
-		ax.set_xlabel(r'$\omega/2\pi$ [$\Delta t^{-1}$]')
+		ax.set_xlabel(r'$\omega/2\pi$ [MCS$^{-1}$]')
 		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [$\Delta t$]')
 		ax.set_yscale('log')
 		#plt.xscale('log')
@@ -121,7 +128,7 @@ def plot_noise_spectra(temps,distances,noise):
 		fig, ax = plt.subplots(1)
 		for j in range(ndistances):
 			ax.plot(ws,spectrum[i,j,:],color=dist_clrs[j],label=r'$d/a=$'+f"{distances[j]:0.0f}")
-		ax.set_xlabel(r'$\omega/2\pi$ [$\Delta t^{-1}$]')
+		ax.set_xlabel(r'$\omega/2\pi$ [MCS$^{-1}$]')
 		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [$\Delta t$]')
 		ax.set_yscale('log')
 		#plt.xscale('log')

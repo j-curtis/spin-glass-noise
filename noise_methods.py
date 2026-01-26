@@ -66,3 +66,17 @@ def calc_gaussian_spectrum(noise,chop_size):
 	### Average the spectrum over replicas 
 	return ws, np.mean(spectrum,axis=0)
 	
+	
+	
+### This function will compute the cumulant function for a given pulse sequence averaged over replicas 
+def calc_cumulant(noise,times):
+	### Chop size is implicitly specified in the times arguments 
+	
+	cumulants = np.exp(1.j*calc_echo_phase(noise,times) )
+	
+	### Now average over replicas 
+	return np.mean(cumulants,axis=0) 
+	
+ 
+		
+
