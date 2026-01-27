@@ -81,6 +81,32 @@ def run_sims(save_filename,Lx,Ly,nsweeps,temps,distances,replica,J_seed = None,s
         	pickle.dump((J_matrix,energies,magnetization,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
         	
         	
+### Saves a compact output and is low memory usage during operation 
+### Forces square lattice 
+def run_sims_low_mem(save_filename,L,nsweeps,temps,distances,replica,J_seed):
+	L = int(L)
+	Lx = L 
+	Ly = L 
+	J_seed = int(J_seed) 
+	replica = int(replica) 
+
+	J_matrix = glauber.nn_coupling_random(-1.,0.5,Lx,Ly,J_seed)
+
+	nns = glauber.nn_indices(Lx,Ly)
+
+	energies, magnetization, qea, noise = glauber.anneal_dynamics_low_mem(J_matrix,nns,nsweeps,temps,distances)
+		
+	### Due to large memory of spin configurations we will now compute derived observables to save 
+	### 1) Energy vs time 
+	### 2) Magnetization vs time 
+	### 3) Edwards-Anderson OP vs time 
+	### 4) Local noise for different distances vs time 
+	
+	with open(save_filename, 'wb') as out_file:
+        	pickle.dump((J_matrix,energies,magnetization,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
+        	
+
+        	
         	
 ### Processing scripts for quench and annealing runs 
 ### Recover and process jobs for quench dynamics 
@@ -258,9 +284,12 @@ def process_annealed_spectra(timestamp,distances,chop_size,get_seed=0,get_replic
 		inputs,data = io.get_results(timestamp=timestamp,run_index=job)
 		seed = str(int(inputs['J_seed']))
 		replica = int(inputs['replica'])
-		Lx = int(inputs['Lx'])
-		Ly = int(inputs['Ly'])
-		
+		try:
+			Lx = int(inputs['Lx'])
+			Ly = int(inputs['Ly'])
+		except:
+			L = int(inputs['L'])
+			
 		replicas_by_job[job] = replica
 
 		if seed not in seeds: 
@@ -331,9 +360,14 @@ def process_anneal_observables(timestamp,get_seed=0):
 		inputs,data = io.get_results(timestamp=timestamp,run_index=job)
 		seed = str(int(inputs['J_seed']))
 		replica = int(inputs['replica'])
-		Lx = int(inputs['Lx'])
-		Ly = int(inputs['Ly'])
-		
+		try:
+			Lx = int(inputs['Lx'])
+			Ly = int(inputs['Ly'])
+		except:
+			L = int(inputs['L'])
+			Lx = L 
+			Ly = L 
+			
 		replicas_by_job[job] = replica
 
 		if seed not in seeds: 
@@ -384,6 +418,7 @@ def process_anneal_observables(timestamp,get_seed=0):
 	distances = np.array(distances)
 
 	return (Lx,Ly),temps,distances,energy,magnetization,q_ea,noise
+
 
 
 

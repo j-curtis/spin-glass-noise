@@ -4,6 +4,7 @@
 
 import numpy as np 
 import time 
+import noise_methods as nm 
 
 from scipy import ndimage as ndi 
 
@@ -161,6 +162,9 @@ def dynamics(initial_spins,nsweeps,J_matrix,T,nn_indices=None,reseed=True):
 		energy[i] = energy[i-1] + energy_change
 
 	return spin_trajectory, energy 
+	
+	
+	
 
 
 ### This method will anneal over a given temperature schedule and generate one replica trajectory for the dynamics over this annealing time 
@@ -210,6 +214,141 @@ def anneal_dynamics(J_matrix,nn_matrix,nsweeps,temperature_schedule,nreplicas=1,
 
 	else:
 		return spins, times, energies
+
+
+### Implements annealing dynamics but memory efficient -- only saves a number of observables rather than the whole spin state 
+def anneal_dynamics_low_mem(J_matrix,nn_matrix,nsweeps,temperature_schedule,distances):
+	if not isinstance(temperature_schedule,np.ndarray): temperature_schedule = np.array([temperature_schedule]) ### Recast single float as an array of length 1 for technical
+	
+	rng = np.random.default_rng() ### We reinstantiate the rng 
+
+	nTs = len(temperature_schedule)
+	ndists = len(distances)
+	
+	nspins = J_matrix.shape[0]
+	
+	
+	### We generate output arrays
+	energies = np.zeros((nTs,nsweeps))
+	mags = np.zeros((nTs,nsweeps))
+	q_eas = np.zeros(nTs)
+	noises = np.zeros((nTs,ndists,nsweeps))
+
+
+	### Method for computing local magnetic field noise 
+
+	### Units and prefactors to keep track
+	mu0 = 1. ### vacuum permeability
+	muB = 1. ### magnetic moment in bohr magnetons 
+	a = 1. ### lattice constant 
+
+	### ASSUME SQUARE GRID 
+	Lx = int(np.sqrt(nspins))
+	Ly = int(np.sqrt(nspins))
+
+	### Computes local magnetic noise
+	### Assumes spin qubit is a distance d away in the center of the sample 
+
+	### The magnetization in the z direction a distance d away is given in terms of the spins as 
+	### B_z(t) = mu_0 mu_B mu_mat/(4 pi) sum_j S_j(t) (2d^2 - R_j^2)/(R_j^2 + d^2)^(3/2) 
+
+	X,Y = np.meshgrid(np.arange(Lx)-Lx//2, np.arange(Ly)-Ly//2,indexing='ij')
+
+	R = np.sqrt(X**2 + Y**2) 
+
+	R = R.ravel() 
+
+	kernels = (2.*distances[None,:]**2 - R[:,None]**2)/( R[:,None]**2 + distances[None,:]**2)**2.5 ### Has shape [Nspins, Nds] 
+	
+	### For a single spin configuration this returns an array of the magnetic field noises at each distance at each time point
+	def local_noise_field(spins):
+		return np.tensordot(spins,kernels,axes=[0,0]) * mu0*muB/(4.*np.pi*a**3)
+
+	### Implements a single step which there are then Lx x Ly of in a sweep
+	def MCstep(spins):
+
+		tmp = spins.copy()
+		
+		### Random site is selected
+		r = rng.choice(np.arange(nspins))
+
+		### Build Curie Weiss field
+		nnpx = nn_matrix[0,r]
+		nnpy = nn_matrix[1,r]
+		nnmx = nn_matrix[2,r]
+		nnmy = nn_matrix[3,r]
+
+		curie_field = J_matrix[nnpx,r]*spins[nnpx] + J_matrix[nnpy,r]*spins[nnpy] +J_matrix[nnmx,r]*spins[nnmx] +J_matrix[nnmy,r]*spins[nnmy] 
+
+		delta_E = -2.*curie_field*spins[r]
+		
+		betadE = delta_E/T
+		
+		betadE_return = 0.
+		
+		### Glauber dynamics has probability of flip e^(-beta dE)/(1+ e^(-beta dE))
+		p = rng.uniform()
+		if p < np.exp(-betadE)/(1.+np.exp(-betadE)):
+			tmp[r] *= -1 
+			betadE_return = betadE
+
+		return tmp, betadE_return
+	
+	### Random initial state for each replica 
+	spins = initialize_spins(nspins,1,random=True)
+	
+	for n in range(nTs):
+		T = temperature_schedule[n]
+		
+		### Just first time step we compute the observables for the entire system
+		energies[n,0] = calc_energy(spins,J_matrix)
+		mags[n,0] = np.mean(spins) 
+		
+		### This will be used to derive the q_ea
+		
+		### We need to chop off the first few time steps (we take first 20% to be safe) 
+		chop_size = int(nsweeps//5)   
+		nsweeps_chopped = 0
+		frozen_moment = np.zeros_like(spins) 
+		
+		### This logs the local magnetic noise 
+		noises[n,:,0] = local_noise_field(spins)
+		
+		for i in range(1,nsweeps):
+		
+			energy_change = 0. 
+			
+			### Run a sweep over all spins 
+			for j in range(nspins):
+				spins, betadE = MCstep(spins)
+				energy_change += betadE*T
+
+				
+			### Update the energy 
+			energies[n,i] = energies[n,i-1] + energy_change
+			
+			### Update the magnetization 
+			mags[n,i] = np.mean(spins) 
+
+			
+			### Update the frozen moment if we are past the chop window 
+			if i >= chop_size:
+				nsweeps_chopped += 1 
+				frozen_moment += spins
+			
+
+			### Log the local magnetic fields 
+			noises[n,:,i] = local_noise_field(spins) 
+			
+			### Spins is now updated for the next loop/annealing epoch 
+		
+		### We now flatten the frozen moment to compute the q_ea order parameter 
+		frozen_moment = frozen_moment/float(nsweeps_chopped) ### Normalize by number of time steps 
+		q_eas[n] = np.mean(frozen_moment**2) ### Average over volume 
+		
+
+	return energies, mags, q_eas, noises
+
 
 
 

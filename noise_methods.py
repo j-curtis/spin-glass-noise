@@ -33,8 +33,7 @@ def calc_local_noise(spins,ds,Lx,Ly):
 
 	return noise 
 
-   
-   
+
 ### Computes the echo phase for a given noise trajectory 
 ### times = (t0,...,tf) where t0 and tf are the initial and final pi/2 pulses and intermediate values are optional pi echo times (as integers)
 def calc_echo_phase(noise,times):
