@@ -4,7 +4,6 @@
 
 import numpy as np 
 import time 
-import noise_methods as nm 
 
 from scipy import ndimage as ndi 
 

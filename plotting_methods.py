@@ -22,6 +22,12 @@ def temp_colors(temps):
 	temp_clrs = cm.RdBu((max(temps) - temps[:])/(max(temps) -min(temps))) ### Plot color schemes coding temperature
 
 	return temp_clrs
+	
+def dist_colors(dists):
+	### Returns a color scale illustrating a series of distances 
+	dist_clrs = cm.magma_r(0.3 + 0.7* (max(dists) - dists)/(max(dists) - min(dists)) )
+	
+	return dist_clrs
 
 def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 	### Generates plots of energy and magnetization across the annealing schedule 
@@ -32,7 +38,7 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 	ntemps = len(temps)
 	temps_cat = np.concatenate([ np.ones(nsweeps)*temps[i] for i in range(ntemps) ] )
 
-	temp_clrs = cm.RdBu((max(temps) - temps[:])/(max(temps) -min(temps))) ### Plot color schemes coding temperature
+	temp_clrs = temp_colors(temps) ### Plot color schemes coding temperature
 	text_yval = -1.575
 	text_xval = 0.333
 	alpha = 0.13
@@ -47,6 +53,7 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 	figs_out = [] 
     
 	for r in replicas:
+		label = f"annealing_schedule_window={mag_window}_replica={r}"
 		energy_cat = np.concatenate(energy[r,...]/area,axis=0)
 		mag_cat = np.concatenate(mag[r,...],axis=0)
 		if mag_window >0: mag_cat = glauber.moving_avg(mag_cat,mag_window)
@@ -61,7 +68,7 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 		axs[1].plot(mag_cat,color='orange')
 		axs[1].axhline(0.,linestyle='dashed',color='gray')
 
-		axs[0].set_ylabel(r'Energy [$J$]')
+		axs[0].set_ylabel(r'Energy density [$J$]')
 		axs[1].set_ylabel(r'Magnetization')
 		axs[1].set_xlabel(r'$t$ [MCS]')
 
@@ -70,7 +77,7 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 		mmin,mmax = extract_range(mag_cat)
 
 		### Annotate and color code annealing schedule 
-		axs[0].text(-(1-text_xval)*nsweeps,text_yval,r'$T/J=$',fontsize='x-large')
+		axs[0].text(-text_xval*nsweeps,text_yval,r'$T/J=$',fontsize='x-large')
 		for i in range(ntemps):
 			axs[0].fill_between(np.arange(len(temps_cat))[i*nsweeps:(i+1)*nsweeps],-2,0,facecolor=temp_clrs[i],alpha=alpha)
 			axs[0].text(i*nsweeps+nsweeps*text_xval,text_yval,f"{temps[i]:0.2f}",fontsize='x-large')
@@ -85,56 +92,59 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 
 		for ax in axs: ax.label_outer()
 
-		figs_out.append(fig)
+		figs_out.append((fig,label))
 		plt.show()
 
 	return figs_out 
 	
 	
-def plot_noise_spectra(temps,distances,noise):
+def plot_noise_spectra(temps,distances,noise,logx=False,logy=True):
 
+	label_suffix_func = lambda val: 'log' if val else 'lin' 
+	label_suffix = "_"+label_suffix_func(logx)+"_"+label_suffix_func(logy)
+	
 	ndistances = len(distances)
 	ntemps = len(temps)
 
 	### First extract FFT of spectra 
 	ws, spectrum = nm.calc_gaussian_spectrum(noise,chop_size=500)
 
-	temp_clrs = cm.RdBu((max(temps) - temps[:])/(max(temps) -min(temps))) ### Plot color schemes coding temperature
-	dist_clrs = cm.Purples(0.5+0.5*(max(distances)-distances[:])/(max(distances)-min(distances)) ) ### Plot color schemes coding distance 
+	temp_clrs = temp_colors(temps) ### Plot color schemes coding temperature
+	dist_clrs = dist_colors(distances) #cm.Purples(0.5+0.5*(max(distances)-distances[:])/(max(distances)-min(distances)) ) ### Plot color schemes coding distance 
 
 	### Now we generate a series of plots for each distances along with labels 
 	figs_noise_vs_freq = [] 
 	for i in range(ndistances):
-		label = f"noise_vs_freq_d={distances[i]}"
+		label = f"noise_vs_freq_d={distances[i]}"+label_suffix
 
 		fig, ax = plt.subplots(1)
 		for j in range(0,ntemps,2):
-			ax.plot(ws,spectrum[j,i,:],color=temp_clrs[j],label=r'$T/J=$'+f"{temps[j]:0.2f}")
+			ax.plot(ws[1:],spectrum[j,i,1:],color=temp_clrs[j],label=r'$T/J=$'+f"{temps[j]:0.2f}")
 		ax.set_xlabel(r'$\omega/2\pi$ [MCS$^{-1}$]')
 		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [$\Delta t$]')
-		ax.set_yscale('log')
-		#plt.xscale('log')
+		if logy: ax.set_yscale('log')
+		if logx: ax.set_xscale('log')
 		ax.legend()
 		ax.set_title(r'$d/a=$'+f"{distances[i]:0.0f}")
-		ax.set_xlim(0.,5.e-2)
+		ax.set_xlim(1.e-5,5.e-2)
 		    
 		figs_noise_vs_freq.append((fig,label))
 		plt.show()
 
 	### Now we generate a series of plots for each temperature along with labels 
 	for i in range(0,ntemps,3):
-		label = f"noise_vs_freq_T={temps[i]:0.2f}"
+		label = f"noise_vs_freq_T={temps[i]:0.2f}"+label_suffix
 
 		fig, ax = plt.subplots(1)
 		for j in range(ndistances):
-			ax.plot(ws,spectrum[i,j,:],color=dist_clrs[j],label=r'$d/a=$'+f"{distances[j]:0.0f}")
+			ax.plot(ws[1:],spectrum[i,j,1:],color=dist_clrs[j],label=r'$d/a=$'+f"{distances[j]:0.0f}")
 		ax.set_xlabel(r'$\omega/2\pi$ [MCS$^{-1}$]')
 		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [$\Delta t$]')
-		ax.set_yscale('log')
-		#plt.xscale('log')
+		if logy: ax.set_yscale('log')
+		if logx: ax.set_xscale('log')
 		ax.legend()
 		ax.set_title(r'$T/J=$'+f"{temps[i]:0.2f}")
-		ax.set_xlim(0.,5.e-2)
+		ax.set_xlim(1.e-5,5.e-2)
 		ax.set_ylim(1.e-4,1.e2)
 		    
 		figs_noise_vs_freq.append((fig,label))
@@ -162,7 +172,7 @@ def plot_frozen_moment(temps,distances,q_ea,noise):
 
 	ax2 = ax1.twinx()
 
-	dist_clrs = cm.Purples(0.25+0.75*(max(distances)-distances[:])/(max(distances)-min(distances)) ) ### Plot color schemes coding distance 
+	dist_clrs = dist_colors(distances) ### Plot color schemes coding distance 
 	for i in range(len(distances)):
 	    
 		ax2.plot(temps,static_noise[:,i]/integrated_spectra[:,i],color=dist_clrs[i],label=r'$d/a=$'+f"{distances[i]:0.2f}")
@@ -172,8 +182,10 @@ def plot_frozen_moment(temps,distances,q_ea,noise):
 	ax2.tick_params(axis='y',labelcolor=dist_clrs[0])
 	
 	out_fig = fig
+	
+	label = "frozen_moment"
 	plt.show()
-	return out_fig 
+	return [(out_fig,label)] 
 	
 
 
