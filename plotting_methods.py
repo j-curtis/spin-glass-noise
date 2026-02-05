@@ -7,14 +7,15 @@ from matplotlib import pyplot as plt
 from matplotlib import cm 
 from matplotlib import colors as mclr
 
-plt.rc('font', family = 'Times New Roman')
-plt.rc('font', size = 14)
-plt.rc('text', usetex=True)
-plt.rc('xtick', labelsize=14)
-plt.rc('ytick', labelsize=14)
-plt.rc('axes', labelsize=18)
-plt.rc('lines', linewidth=2.5)
-plt.rc('figure',figsize=(23,10))
+def run_rc_defaul():
+	plt.rc('font', family = 'Times New Roman')
+	plt.rc('font', size = 14)
+	plt.rc('text', usetex=True)
+	plt.rc('xtick', labelsize=14)
+	plt.rc('ytick', labelsize=14)
+	plt.rc('axes', labelsize=18)
+	plt.rc('lines', linewidth=2.5)
+	plt.rc('figure',figsize=(23,10))
 
 
 def temp_colors(temps):
@@ -49,6 +50,12 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 		vmin = min(dataset)
 
 		return vmin, vmax
+		
+		
+	### Define the formatter function from https://www.geeksforgeeks.org/data-analysis/formatting-axis-tick-labels-from-numbers-to-thousands-and-millions/
+	import matplotlib.ticker as ticker 
+	def format_func(value, tick_number):
+		return f'{int(value / 1000)}k'
 
 	figs_out = [] 
     
@@ -71,16 +78,19 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 		axs[0].set_ylabel(r'Energy density [$J$]')
 		axs[1].set_ylabel(r'Magnetization')
 		axs[1].set_xlabel(r'$t$ [MCS]')
+		axs[1].xaxis.set_major_formatter(ticker.FuncFormatter(format_func))
 
 
 		### Extract y ranges 
 		mmin,mmax = extract_range(mag_cat)
 
 		### Annotate and color code annealing schedule 
-		axs[0].text(-text_xval*nsweeps,text_yval,r'$T/J=$',fontsize='x-large')
+		axs[0].text(-text_xval*nsweeps,text_yval,r'$T/J=$')
+		
+		
 		for i in range(ntemps):
 			axs[0].fill_between(np.arange(len(temps_cat))[i*nsweeps:(i+1)*nsweeps],-2,0,facecolor=temp_clrs[i],alpha=alpha)
-			axs[0].text(i*nsweeps+nsweeps*text_xval,text_yval,f"{temps[i]:0.2f}",fontsize='x-large')
+			axs[0].text(i*nsweeps+nsweeps*text_xval,text_yval,f"{temps[i]:0.2f}")
 			axs[1].fill_between(np.arange(len(temps_cat))[i*nsweeps:(i+1)*nsweeps],-1,1,facecolor=temp_clrs[i],alpha=alpha)
 
 		### Set appropriate plot ranges 
@@ -103,6 +113,11 @@ def plot_noise_spectra(temps,distances,noise,logx=False,logy=True):
 	label_suffix_func = lambda val: 'log' if val else 'lin' 
 	label_suffix = "_"+label_suffix_func(logx)+"_"+label_suffix_func(logy)
 	
+	### Figure sizes 
+	fw = 14
+	fh = 6
+	
+	
 	ndistances = len(distances)
 	ntemps = len(temps)
 
@@ -118,10 +133,13 @@ def plot_noise_spectra(temps,distances,noise,logx=False,logy=True):
 		label = f"noise_vs_freq_d={distances[i]}"+label_suffix
 
 		fig, ax = plt.subplots(1)
+		fig.set_figwidth(fw)
+		fig.set_figheight(fh)
+		
 		for j in range(0,ntemps,2):
 			ax.plot(ws[1:],spectrum[j,i,1:],color=temp_clrs[j],label=r'$T/J=$'+f"{temps[j]:0.2f}")
 		ax.set_xlabel(r'$\omega/2\pi$ [MCS$^{-1}$]')
-		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [$\Delta t$]')
+		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [MCS]')
 		if logy: ax.set_yscale('log')
 		if logx: ax.set_xscale('log')
 		ax.legend()
@@ -136,16 +154,19 @@ def plot_noise_spectra(temps,distances,noise,logx=False,logy=True):
 		label = f"noise_vs_freq_T={temps[i]:0.2f}"+label_suffix
 
 		fig, ax = plt.subplots(1)
+		fig.set_figwidth(fw)
+		fig.set_figheight(fh)
+		
 		for j in range(ndistances):
 			ax.plot(ws[1:],spectrum[i,j,1:],color=dist_clrs[j],label=r'$d/a=$'+f"{distances[j]:0.0f}")
 		ax.set_xlabel(r'$\omega/2\pi$ [MCS$^{-1}$]')
-		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [$\Delta t$]')
+		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [MCS]')
 		if logy: ax.set_yscale('log')
 		if logx: ax.set_xscale('log')
 		ax.legend()
 		ax.set_title(r'$T/J=$'+f"{temps[i]:0.2f}")
 		ax.set_xlim(1.e-5,5.e-2)
-		ax.set_ylim(1.e-4,1.e2)
+		ax.set_ylim(1.e-3,1.e3)
 		    
 		figs_noise_vs_freq.append((fig,label))
 		plt.show()
@@ -173,12 +194,12 @@ def plot_frozen_moment(temps,distances,q_ea,noise):
 	ax2 = ax1.twinx()
 
 	dist_clrs = dist_colors(distances) ### Plot color schemes coding distance 
-	for i in range(len(distances)):
-	    
+	for i in range(len(distances)): 
 		ax2.plot(temps,static_noise[:,i]/integrated_spectra[:,i],color=dist_clrs[i],label=r'$d/a=$'+f"{distances[i]:0.2f}")
+	
 	ax2.set_yscale('log')
 	ax2.legend()
-	ax2.set_ylabel(r'$\mathcal{N}(\omega=0)/\int_\omega \mathcal{N}(\omega)$',color=dist_clrs[0])
+	ax2.set_ylabel(r'$\mathcal{N}(\omega=0)/\int_\omega \mathcal{N}(\omega)$ [MCS]',color=dist_clrs[0])
 	ax2.tick_params(axis='y',labelcolor=dist_clrs[0])
 	
 	out_fig = fig
