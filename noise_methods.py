@@ -77,5 +77,27 @@ def calc_cumulant(noise,times):
 	return np.mean(cumulants,axis=0) 
 	
  
+ 
+### This function will down sample the noise and perform averaging over blocks which allows the reduction of data size as well as enables direct calculation of echo phases 
+def down_sample(data,chop_size,sample_size):
+	### First we chop the data 
+	### We assume shape [....,N] where N is the number of time points 
+	data_chopped = data[...,chop_size:] 
+	
+	### Next we generate matrices for masking the data to implement the sample averaging 
+	ntimes = data_chopped.shape[-1] 
+	mask_matrix = np.zeros((ntimes,ntimes//sample_size))
+	for j in range(mask_matrix.shape[-1]):
+		mask_matrix[j*sample_size:(j*sample_size+sample_size),j] = 1. 
+		
+	
+	return np.tensordot(data_chopped,mask_matrix,axes=[-1,0])
+		
+		
+		
+		
+		
+		
+		
 		
 
