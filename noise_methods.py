@@ -5,6 +5,9 @@ import numpy as np
 import glauber
 
 
+cumulants_ref = [ 'X','Y','XX','XY','YY','XXX','XXY','XYY','YYY','XXXX','XXXY','XXYY','XYYY','YYYY']
+
+
 ### Computes local magnetic noise a distance d away given a stochastic realization of the spin configuration 
 def calc_local_noise(spins,ds,Lx,Ly):
 	### Units and prefactors to keep track
@@ -90,6 +93,8 @@ def down_sample(data,chop_size,sample_size):
 	for j in range(mask_matrix.shape[-1]):
 		mask_matrix[j*sample_size:(j*sample_size+sample_size),j] = 1. 
 		
+	### Time points in original MCS units 
+	times = np.arange(mask_matrix.shape[-1])*sample_size
 	
 	return np.tensordot(data_chopped,mask_matrix,axes=[-1,0])
 		
@@ -117,7 +122,6 @@ def extract_cumulants_Ramsey(noise_sampled):
 	means = np.mean(echos,axis=0)
 
 	moments = np.zeros((14,*means.shape[1:]))
-	print(moments.shape)
 	centered_echos = echos - means[None,...]
 	moments[:2,...] = means
 
@@ -163,7 +167,6 @@ def extract_cumulants_Hahn(noise_sampled):
 	means = np.mean(echos,axis=0)
 
 	moments = np.zeros((14,*means.shape[1:]))
-	print(moments.shape)
 	centered_echos = echos - means[None,...]
 	moments[:2,...] = means
 
@@ -187,5 +190,13 @@ def extract_cumulants_Hahn(noise_sampled):
 
 	return cumulants 		
 		
-		
+def echo_times(noise_sampled,sample_times):
+	nsampled = noise_sampled.shape[-1]
+	ndelays = nsampled//4 
+
+	delays = np.arange(ndelays)
+	
+	return delays*sample_times 
+	
+	
 
