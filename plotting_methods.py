@@ -2,6 +2,7 @@ import numpy as np
 import glauber
 import project_run_method as prm
 import noise_methods as nm
+from scipy import stats
 
 from matplotlib import pyplot as plt 
 from matplotlib import cm 
@@ -32,6 +33,7 @@ def dist_colors(dists):
 
 def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 	### Generates plots of energy and magnetization across the annealing schedule 
+	### Also generates a plot of energy vs temperature and magnetic susceptibility vs. temperature 
 	### Selects just a single replica or all replicas 
 	### First we concatenate into a single unified schedule 
 
@@ -85,7 +87,7 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 		mmin,mmax = extract_range(mag_cat)
 
 		### Annotate and color code annealing schedule 
-		axs[0].text(-text_xval*nsweeps,text_yval,r'$T/J=$')
+		axs[0].text(-(text_xval+0.7)*nsweeps,text_yval,r'$T/J=$')
 		
 		
 		for i in range(ntemps):
@@ -104,6 +106,27 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 
 		figs_out.append((fig,label))
 		plt.show()
+
+	### Energy vs. T 
+	chop_size = int(nsweeps//5)
+	label = "internal_energy_heat_capacity_vs_T"
+	E_vs_T = np.mean(energy[:,:,chop_size:],axis=(0,-1))/area
+	c_v = (np.std(energy[:,:,chop_size:],axis=(0,-1))/temps)**2/area
+	
+	fig, ax1 = plt.subplots(1)
+	ax1.plot(temps,E_vs_T,'o-',color='purple',label=r'$U$')
+	ax1.set_xlabel(r'$T/J$')
+	ax1.set_ylabel(r'$U/J$')
+
+	ax2 = ax1.twinx()
+	ax2.plot(temps,c_v,'x-',color='black',label=r'$\Delta E^2/T^2$')
+	ax2.plot(temps,np.gradient(E_vs_T,temps),'o-',color='gray',label=r'$\frac{dU}{dT}$')
+	ax2.set_ylabel(r'$c_V$')
+
+	fig.legend(loc=(0.135,0.8))
+
+	figs_out.append((fig,label))
+	plt.show()
 
 	return figs_out 
 	
@@ -211,20 +234,97 @@ def plot_frozen_moment(temps,distances,q_ea,noise):
 
 
 
+def plot_cumulants(temps,distances,noise,sample_size,z_indxs,temp_indxs,plotting_time_step):
+	figs_out = []
+	temp_clrs = temp_colors(temps) ### Plot color schemes coding temperature
+	
+	### Fitting to power laws 
+	def fit_cumulant(t,y):
+	    
+		y_log = np.log(y)
+		t_log = np.log(t) 
+
+		fit = stats.linregress(t_log,y_log) 
+
+		return np.exp(fit.intercept +fit.slope*t_log), fit.intercept, fit.slope, fit.rvalue
+
+	### Sample the data down for cumulant calculations
+	noise_sampled = nm.down_sample(noise,noise.shape[-1]//5,sample_size)
+	cumulants = nm.extract_cumulants_Hahn(noise_sampled)
+	echo_times = nm.echo_times(noise_sampled,sample_size)
+
+	### Perform fits 
+	fitted_data_Gaussian = np.zeros_like(cumulants[2,:,:,1:])
+	fitted_data_Gamma4 = np.zeros_like(cumulants[2,:,:,1:])
+
+	intercepts_Gaussian = np.zeros_like(cumulants[2,:,:,0])
+	intercepts_Gamma4 = np.zeros_like(cumulants[2,:,:,0])
+
+	slopes_Gaussian = np.zeros_like(cumulants[2,:,:,0])
+	slopes_Gamma4 = np.zeros_like(cumulants[2,:,:,0])
+
+	r_vals_Gaussian = np.zeros_like(cumulants[2,:,:,0])
+	r_vals_Gamma4 = np.zeros_like(cumulants[2,:,:,0])
+
+	### We only need to fit the distances/temperatures we are plotting for 
+	for i in z_indxs:
+		for j in temp_indxs:
+			fitted_data_Gaussian[j,i,:],intercepts_Gaussian[j,i], slopes_Gaussian[j,i], r_vals_Gaussian[j,i] = fit_cumulant(echo_times[1:],cumulants[2,j,i,1:])
+			fitted_data_Gamma4[j,i,:],intercepts_Gamma4[j,i], slopes_Gamma4[j,i], r_vals_Gamma4[j,i] = fit_cumulant(echo_times[1:],-cumulants[11,j,i,1:])
+
+
+	### Make plots for each distance and desired cumulant 
+	
+	### We should make this auto adjust for a number of sample units 
+	time_indxs = np.arange(2,len(echo_times),plotting_time_step)
+
+	time_colors = cm.Purples(np.linspace(0.2,1.,len(echo_times)))
+	
+	for z_indx in z_indxs:
+		label=f'gaussian_noise_d={distances[z_indx]:0.2f}'
+		fig,ax = plt.subplots()
+		for temp_indx in temp_indxs:
+			p = slopes_Gaussian[temp_indx,z_indx]
+			ax.plot(echo_times[1:],cumulants[2,temp_indx,z_indx,1:],'o-',color=temp_clrs[temp_indx],label=f'$T/J=${temps[temp_indx]:0.2f}')
+			ax.plot(echo_times[1:],fitted_data_Gaussian[temp_indx,z_indx,:],'--',color=temp_clrs[temp_indx],label=r'${{\tau}}^{{{p:0.2f}}}$'.format(p=p))
+		ax.set_yscale('log')
+		ax.set_xscale('log')
+		ax.legend()
+		ax.set_xlabel(r'Hahn echo time [MCS]')
+		ax.set_ylabel(r'Gaussian Hahn echo')
+		ax.set_title(f'$d/a =${distances[z_indx]:0.2f}')
+		figs_out.append((fig,label))
+		plt.show()
+    		
+		label=f'gamma4_noise_d={distances[z_indx]:0.2f}'
+		fig,ax = plt.subplots()
+		for temp_indx in temp_indxs:
+			p = slopes_Gaussian[temp_indx,z_indx]
+			ax.plot(echo_times[1:],-cumulants[11,temp_indx,z_indx,1:],'o-',color=temp_clrs[temp_indx],label=f'$T/J=${temps[temp_indx]:0.2f}')
+			ax.plot(echo_times[1:],fitted_data_Gamma4[temp_indx,z_indx,:],'--',color=temp_clrs[temp_indx],label=r'${{\tau}}^{{{p:0.2f}}}$'.format(p=p))
+		ax.set_yscale('log')
+		ax.set_xscale('log')
+		ax.legend()
+		ax.set_xlabel(r'Hahn echo time [MCS]')
+		ax.set_ylabel(r'$-\Gamma^{(4)}$')
+		ax.set_title(f'$d/a =${distances[z_indx]:0.2f}')
+		figs_out.append((fig,label))
+		plt.show()
+		
+		label=f'gamma4_vs_T_d={distances[z_indx]:0.2f}'
+		fig,ax = plt.subplots()
+		for time_indx in time_indxs:
+			ax.plot(temps,-cumulants[11,:,z_indx,time_indx],label=r'$ \tau_{{ \rm E }} = $ '+f'{echo_times[time_indx]} [MCS]',color=time_colors[time_indx])
+		ax.set_yscale('log')
+		ax.set_xlabel(r'$T/J$')
+		ax.set_ylabel(r'$-\Gamma^{(4)}$')
+		ax.legend()
+		figs_out.append((fig,label))
+		plt.show()
 
 
 
-
-
-
-
-
-
-
-
-
-
-
+	return figs_out
 
 
 
