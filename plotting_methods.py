@@ -299,7 +299,7 @@ def plot_cumulants(temps,distances,noise,sample_size,z_indxs,temp_indxs,plotting
 		label=f'gamma4_noise_d={distances[z_indx]:0.2f}'
 		fig,ax = plt.subplots()
 		for temp_indx in temp_indxs:
-			p = slopes_Gaussian[temp_indx,z_indx]
+			p = slopes_Gamma4[temp_indx,z_indx]
 			ax.plot(echo_times[1:],-cumulants[11,temp_indx,z_indx,1:],'o-',color=temp_clrs[temp_indx],label=f'$T/J=${temps[temp_indx]:0.2f}')
 			ax.plot(echo_times[1:],fitted_data_Gamma4[temp_indx,z_indx,:],'--',color=temp_clrs[temp_indx],label=r'${{\tau}}^{{{p:0.2f}}}$'.format(p=p))
 		ax.set_yscale('log')
@@ -328,6 +328,67 @@ def plot_cumulants(temps,distances,noise,sample_size,z_indxs,temp_indxs,plotting
 
 
 
+def run_annealing_plot_suite(timestamps,sample_size,z_indxs,temp_indxs,plotting_time_step,save_figs=False,window=100):
+	### Load data sets 
+	print("Loading data sets")
+	energy_list = [] 
+	mag_list = []
+	q_ea_list = []
+	noise_list = []
+
+	for timestamp in timestamps:
+		(Lx,Ly),temps,distances,energy,mag,q_ea,noise = prm.process_anneal_observables(timestamp)
+		ntemps = len(temps)
+		print(f"Temperatures per replica: {ntemps}")
+		ndists = len(distances)
+		nreplicas = energy.shape[0]
+		nsweeps = energy.shape[-1]
+		print(f"Sweeps per epoch: {nsweeps}")
+		energy_list.append(energy)
+		mag_list.append(mag)
+		q_ea_list.append(q_ea)
+		noise_list.append(noise)
+
+	energy = np.concatenate(energy_list)
+	mag = np.concatenate(mag_list)
+	q_ea = np.concatenate(q_ea_list)
+	noise = np.concatenate(noise_list)
+	
+	### Annealing schedule figure 	
+	schedule_fig = pm.plot_schedule(energy,mag,temps,Lx*Ly,mag_window)
+	
+	### Frozen moment figures 
+	frozen_fig = pm.plot_frozen_moment(temps,distances,q_ea,noise)
+	
+	### Noise spectra figures
+	spectra_figs = pm.plot_noise_spectra(temps,distances,noise,logx=True,logy=True) 
+	
+	### Cumulant figures
+	cumulant_figs = pm.plot_cumulants(temps,distances,noise,sample_size,z_indxs,temp_indxs,plotting_time_step)
+	
+	### Poor mans approach to figure saving for now
+	fig_directory_path = "/home/jcurtis/Projects/SpinGlassNoise/figs/" + "".join([ timestamp[-5:]+"_" for timestamp in timestamps ])[:-1]+"/"
+
+	if not os.path.isdir(fig_directory_path):
+		os.makedirs(fig_directory_path)
+
+		
+	if save_figs:
+		for fig,label in schedule_fig:
+			fig_path = fig_directory_path + label+".pdf"
+			fig.savefig(fig_path,bbox_inches='tight') 
+
+		for fig,label in frozen_fig:
+			fig_path = fig_directory_path + label+".pdf"
+			fig.savefig(fig_path,bbox_inches='tight')
+
+		for fig,label in spectra_figs:
+			fig_path = fig_directory_path + label+".pdf"
+			fig.savefig(fig_path,bbox_inches='tight')
+
+		for fig,label in cumulant_figs:
+			fig_path = fig_directory_path + label+".pdf"
+			fig.savefig(fig_path,bbox_inches='tight')
 
 
 	
