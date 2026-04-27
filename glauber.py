@@ -68,6 +68,53 @@ def nn_indices(Lx,Ly):
 	return nns
 
 
+
+### This method generates a list of exchange couplings and indices for nearest and next-nearest neighbor couplings 
+def nn_nnn_generate(Lx,Ly,Jnn,Jnnn,p,seed):
+
+	rng = np.random.default_rng(seed) 
+	
+	J_matrix = np.zeros((Lx*Ly,Lx*Ly))
+	sites = np.arange(Lx*Ly)
+	
+	nns = np.zeros((4,Lx*Ly),dtype=int) ### This is the list of 4 nn indices of each site stored in the order [+x,+y,-x,-y]
+	nnns = np.zeros((4,Lx*Ly),dtype=int) ### This is the list of 4 next nn indices of each site stored in the order [+x+y,-x+y,-x-y,+x-y]
+	for r in sites:
+		x = r%Lx 
+		y = r//Lx
+
+		rpx = (x+1)%Lx + y*Lx
+		rmx = (x-1)%Lx + y*Lx
+		rpy = x%Lx + ( (y+1)%Ly )*Lx
+		rmy = x%Lx + ( (y-1)%Ly )*Lx 
+		
+		rpxpy = (x+1)%Lx + ( (y+1)%Ly )*Lx
+		rmxpy = (x-1)%Lx + ( (y+1)%Ly )*Lx
+		rmxmy = (x-1)%Lx + ( (y-1)%Ly )*Lx
+		rpxmy = (x+1)%Lx + ( (y-1)%Ly )*Lx
+
+		J_matrix[rpx,r] = Jnn
+		J_matrix[rmx,r] = Jnn 
+		J_matrix[rpy,r] = Jnn 
+		J_matrix[rmy,r] = Jnn 
+		
+		J_matrix[rpxpy,r] = rng.choice([Jnnn,-Jnnn],p=[p,1.-p])
+		J_matrix[rpxmy,r] = rng.choice([Jnnn,-Jnnn], p=[p,1.-p])
+
+		J_matrix[r,r] = 0.
+		
+		nns[:,r] = np.array([rpx,rpy,rmx,rmy],dtype=int)
+		nnns[:,r] = np.array([rpxpy,rmxpy,rmxmy,rpxmy],dtype=int)
+		
+
+	return 0.5*( J_matrix + np.transpose(J_matrix))
+	
+	
+	
+	
+	
+	
+
 ### This method will generate the nearest neighbor couplings but randomize whether they are + or - (p is probability of +)
 ### Allows to pass a seed to generate deterministic disorder configs 
 def nn_coupling_random(J,p,Lx,Ly,seed=None):
