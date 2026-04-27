@@ -108,10 +108,12 @@ def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
 		plt.show()
 
 	### Energy vs. T 
-	chop_size = int(nsweeps//5)
+	chop_size = int(nsweeps//3)
 	label = "internal_energy_heat_capacity_vs_T"
-	E_vs_T = np.mean(energy[:,:,chop_size:],axis=(0,-1))/area
-	c_v = (np.std(energy[:,:,chop_size:],axis=(0,-1))/temps)**2/area
+	#E_vs_T = np.mean(energy[:,:,chop_size:],axis=(0,-1))/area
+	#c_v = (np.std(energy[:,:,chop_size:],axis=(0,-1))/temps)**2/area
+	E_vs_T = np.mean(energy[:,:,-1],axis=0)/area
+	c_v = np.std(energy[:,:,chop_size:],axis=(0,-1))**2/(area*temps**2)
 	
 	fig, ax1 = plt.subplots(1)
 	ax1.plot(temps,E_vs_T,'o-',color='purple',label=r'$U$')
