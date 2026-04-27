@@ -98,8 +98,8 @@ def nn_nnn_generate(Lx,Ly,Jnn,Jnnn,p,seed):
 		J_matrix[rpy,r] = Jnn 
 		J_matrix[rmy,r] = Jnn 
 		
-		J_matrix[rpxpy,r] = rng.choice([Jnnn,-Jnnn],p=[p,1.-p])
-		J_matrix[rpxmy,r] = rng.choice([Jnnn,-Jnnn], p=[p,1.-p])
+		J_matrix[rpxpy,r] = rng.choice([Jnnn,0],p=[p,1.-p])
+		J_matrix[rpxmy,r] = rng.choice([Jnnn,0], p=[p,1.-p])
 
 		J_matrix[r,r] = 0.
 		
@@ -510,7 +510,7 @@ def anneal_dynamics_low_mem_nnn(J_matrix,neighbors,nsweeps,temperature_schedule,
 			neel_mask = neel_mask.ravel() 
 			neel_mask = (-1.*np.ones(nspins,dtype=int))**neel_mask
 			neels[n,i] = np.mean( spins*neel_mask )
-			print("test 2") 
+
 			
 			### Update the frozen moment if we are past the chop window 
 			if i >= chop_size:
