@@ -105,7 +105,33 @@ def run_sims_low_mem(save_filename,L,nsweeps,temps,distances,replica,J_seed):
 	with open(save_filename, 'wb') as out_file:
         	pickle.dump((J_matrix,energies,magnetization,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
         	
+### Saves a compact output and is low memory usage during operation 
+### Forces square lattice 
+### Implements next-nearest neighbor couplings
+def run_sims_low_mem_nnn(save_filename,L,nsweeps,temps,distances,replica,Jnnn,p,J_seed):
+	L = int(L)
+	nsweeps = int(nsweeps)
+	Lx = L 
+	Ly = L 
+	J_seed = int(J_seed) 
+	replica = int(replica) 
 
+	J_matrix, neighbors = glauber.nn_nnn_generate(Lx,Ly,1.,Jnnn,p,J_seed)
+
+	energies, magnetization, neel, qea, noise = glauber.anneal_dynamics_low_mem_nnn(J_matrix,neighbors,nsweeps,temps,distances)
+		
+	### Due to large memory of spin configurations we will now compute derived observables to save 
+	### 1) Energy vs time 
+	### 2) Magnetization vs time 
+	### 3) Neel order vs time 
+	### 4) Edwards-Anderson OP vs time 
+	### 5) Local noise for different distances vs time 
+	
+	with open(save_filename, 'wb') as out_file:
+        	pickle.dump((J_matrix,energies,magnetization,neel,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
+        	
+
+        	
         	
         	
 ### Processing scripts for quench and annealing runs 
