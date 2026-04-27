@@ -5,6 +5,9 @@ import numpy as np
 import glauber
 
 
+cumulants_ref = [ 'X','Y','XX','XY','YY','XXX','XXY','XYY','YYY','XXXX','XXXY','XXYY','XYYY','YYYY']
+
+
 ### Computes local magnetic noise a distance d away given a stochastic realization of the spin configuration 
 def calc_local_noise(spins,ds,Lx,Ly):
 	### Units and prefactors to keep track
@@ -77,5 +80,123 @@ def calc_cumulant(noise,times):
 	return np.mean(cumulants,axis=0) 
 	
  
+ 
+### This function will down sample the noise and perform averaging over blocks which allows the reduction of data size as well as enables direct calculation of echo phases 
+def down_sample(data,chop_size,sample_size):
+	### First we chop the data 
+	### We assume shape [....,N] where N is the number of time points 
+	data_chopped = data[...,chop_size:] 
+	
+	### Next we generate matrices for masking the data to implement the sample averaging 
+	ntimes = data_chopped.shape[-1] 
+	mask_matrix = np.zeros((ntimes,ntimes//sample_size))
+	for j in range(mask_matrix.shape[-1]):
+		mask_matrix[j*sample_size:(j*sample_size+sample_size),j] = 1. 
 		
+	### Time points in original MCS units 
+	times = np.arange(mask_matrix.shape[-1])*sample_size
+	
+	return np.tensordot(data_chopped,mask_matrix,axes=[-1,0])
+		
+		
+		
+### Given the down-sampled noise this computes the first four cumulants of the noise as a function of echo delay 
+### Built on Ramsey sequence and the needed higher echos  
+def extract_cumulants_Ramsey(noise_sampled):
+
+	### Methods for processesing the cumulants of the Ramsey echo 
+
+	nsampled = noise_sampled.shape[-1]
+	ndelays = nsampled//2
+
+	delays = np.arange(ndelays)
+	filters = np.zeros((2,ndelays,nsampled))
+	echos = np.zeros((*noise_sampled.shape[:-1],2,ndelays))
+
+	for i in range(ndelays):
+		filters[0,i,:i] = 1.
+		filters[1,i,i:2*i] = 1.
+
+	echos = np.tensordot( noise_sampled,filters,axes=[-1,-1])
+	echos = np.rollaxis(echos, -2, 1)
+	means = np.mean(echos,axis=0)
+
+	moments = np.zeros((14,*means.shape[1:]))
+	centered_echos = echos - means[None,...]
+	moments[:2,...] = means
+
+	for i in range(3):
+		moments[2+i,...] = np.mean( (centered_echos[0,...])**(2-i)*(centered_echos[1,...])**i ,axis=0)
+
+	for i in range(4):
+		moments[5+i,...] = np.mean( (centered_echos[0,...])**(3-i)*(centered_echos[1,...])**i ,axis=0)
+
+	for i in range(5):
+		moments[9+i,...] = np.mean( (centered_echos[0,...])**(4-i)*(centered_echos[1,...])**i ,axis=0)
+
+	cumulants = moments.copy() 
+
+	### Only at fourth order are the cumulants different from the central moments 
+	cumulants[9,...] = moments[9,...] - 3.*(moments[2,...])**2 
+	cumulants[10,...] = moments[10,...] - 3.*moments[2,...]*moments[3,...]
+	cumulants[11,...] = moments[11,...] - 2.*moments[3,...]**2 - moments[2,...]*moments[4,...] 
+	cumulants[12,...] = moments[12,...] - 3.*moments[4,...]*moments[3,...]
+	cumulants[13,...] = moments[13,...] - 3.*(moments[4,...])**2
+
+	return cumulants 
+    
+### Given the down-sampled noise this computes the first four cumulants of the noise as a function of echo delay 
+### Built on Hahn sequence and the needed higher echos  
+def extract_cumulants_Hahn(noise_sampled):
+
+	### Methods for processesing the cumulants of the Ramsey echo 
+
+	nsampled = noise_sampled.shape[-1]
+	ndelays = nsampled//4 
+
+	delays = np.arange(ndelays)
+	filters = np.zeros((2,ndelays,nsampled))
+	echos = np.zeros((*noise_sampled.shape[:-1],2,ndelays))
+
+	for i in range(1,ndelays):
+		filters[0,i,:2*i] = np.sign(np.arange(2*i) -i+0.5 )
+		filters[1,i,2*i:4*i] = np.sign(np.arange(2*i) -i+0.5 )
+
+	echos = np.tensordot( noise_sampled,filters,axes=[-1,-1])
+	echos = np.rollaxis(echos, -2, 1)
+	means = np.mean(echos,axis=0)
+
+	moments = np.zeros((14,*means.shape[1:]))
+	centered_echos = echos - means[None,...]
+	moments[:2,...] = means
+
+	for i in range(3):
+		moments[2+i,...] = np.mean( (centered_echos[0,...])**(2-i)*(centered_echos[1,...])**i ,axis=0)
+
+	for i in range(4):
+		moments[5+i,...] = np.mean( (centered_echos[0,...])**(3-i)*(centered_echos[1,...])**i ,axis=0)
+
+	for i in range(5):
+		moments[9+i,...] = np.mean( (centered_echos[0,...])**(4-i)*(centered_echos[1,...])**i ,axis=0)
+
+	cumulants = moments.copy() 
+
+	### Only at fourth order are the cumulants different from the central moments 
+	cumulants[9,...] = moments[9,...] - 3.*(moments[2,...])**2 
+	cumulants[10,...] = moments[10,...] - 3.*moments[2,...]*moments[3,...]
+	cumulants[11,...] = moments[11,...] - 2.*moments[3,...]**2 - moments[2,...]*moments[4,...] 
+	cumulants[12,...] = moments[12,...] - 3.*moments[4,...]*moments[3,...]
+	cumulants[13,...] = moments[13,...] - 3.*(moments[4,...])**2
+
+	return cumulants 		
+		
+def echo_times(noise_sampled,sample_times):
+	nsampled = noise_sampled.shape[-1]
+	ndelays = nsampled//4 
+
+	delays = np.arange(ndelays)
+	
+	return delays*sample_times 
+	
+	
 
