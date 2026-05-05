@@ -2,7 +2,6 @@
 ### Jonathan Curtis 
 
 import numpy as np 
-import time 
 
 ### Generates various square lattices 
 class lattice:
@@ -17,6 +16,9 @@ class lattice:
 		self.nns = []
 		self.nnns = []
 		
+		### General list of interaction pairs 
+		self.partners = [] 
+		
 		self.J_matrix = np.zeros((self.N,self.N)) 
 		
 		for i in self.sites:
@@ -27,16 +29,19 @@ class lattice:
 			
 			nns_site = []
 			nnns_site = [] 
+			partners_site = []
 			
 			for nn in nn_vectors:
 				x,y = r 
 				rnn = (x+ nn[0],y+nn[1] )
 				nns_site.append(  self.coordinate_to_index(rnn) )
+				partners_site.append(self.coordinate_to_index(rnn))
 				
 			for nnn in nnn_vectors:
 				x,y = r 
 				rnnn = (x+nnn[0], y+nnn[1])
 				nnns_site.append( self.coordinate_to_index(rnnn) )
+				partners_site.append(self.coordinate_to_index(rnnn))
 				
 			self.nns.append(nns_site)
 			self.nnns.append(nnns_site)
@@ -67,8 +72,12 @@ class lattice:
 		self.pnn = p 
 	
 		for i in self.sites:
+			 
 			for j in self.nns[i]:
 				self.J_matrix[j,i] = self.rng.choice([self.Jnn, -self.Jnn],p=[self.pnn,1.-self.pnn])
+			
+			### We also add the partners to the list 
+			self.partners.append(self.nns[i])
 			
 		### This needs to be symmetric in the end 
 		self.J_matrix = 0.5*(self.J_matrix + np.transpose(self.J_matrix))
@@ -81,6 +90,9 @@ class lattice:
 		for i in self.sites:
 			for j in self.nnns[i]:
 				self.J_matrix[j,i] = self.rng.choice([self.Jnnn, 0.],p=[self.pnnn,1.-self.pnnn])
+				
+			### Add the partners to the list
+			self.partners.append(self.nnns[i])
 			
 		### This needs to be symmetric in the end 
 		self.J_matrix = 0.5*(self.J_matrix + np.transpose(self.J_matrix))
