@@ -561,7 +561,7 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances):
 
 	### ASSUME SQUARE GRID 
 	Lx = int(lattice.L)
-	Ly = int(lattice.L))
+	Ly = int(lattice.L)
 
 	### Computes local magnetic noise
 	### Assumes spin qubit is a distance d away in the center of the sample 
