@@ -153,7 +153,7 @@ def run_sims_lattice(save_filename,lattice_object,nsweeps,temps,distances,replic
 	### 5) Local noise for different distances vs time 
 	
 	with open(save_filename, 'wb') as out_file:
-        	pickle.dump((J_matrix,energies,magnetization,neel,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
+        	pickle.dump((lattice_object,energies,magnetization,neel,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the lattice
         	
       	
         	
@@ -429,6 +429,8 @@ def process_anneal_observables(timestamp,get_seed=0):
 
 	energy = []
 	magnetization = [] 
+	neel = [] 
+	extract_neel = False ### Flag that if activated indicates there is also data on Neel ordering 
 	q_ea = []
 	noise = [] 
     
@@ -439,10 +441,15 @@ def process_anneal_observables(timestamp,get_seed=0):
 	for job in jobs:
 
 		inputs, data = io.get_results(timestamp = timestamp,run_index = job)
+		if len(data) > 5: extract_neel = True 
 		try:
-			J, energy_tmp, magnetization_tmp, q_ea_tmp, noise_tmp = data  
+			if not extract_neel:
+				J, energy_tmp, magnetization_tmp, q_ea_tmp, noise_tmp = data
+			if extract_neel:
+				J, energy_tmp, magnetization_tmp, neel_tmp, q_ea_tmp, noise_tmp = data
 			energy.append(energy_tmp)
 			magnetization.append(magnetization_tmp)
+			if extract_neel: neel.append(neel_tmp) 
 			q_ea.append(q_ea_tmp)
 			noise.append(noise_tmp) 
 
@@ -461,17 +468,18 @@ def process_anneal_observables(timestamp,get_seed=0):
 	print("Stacking data")
 	energy = np.stack(energy,axis=0)
 	magnetization = np.stack(magnetization,axis=0)
+	if extract_neel: neel = np.stack(neel,axis=0)
 	q_ea = np.stack(q_ea,axis=0)
 	noise = np.stack(noise,axis=0) 
 
 	temps = np.array(temps)
 	distances = np.array(distances)
 
-	return (Lx,Ly),temps,distances,energy,magnetization,q_ea,noise
+	if extract_neel:
+		return (Lx,Ly),temps,distances,energy,magnetization,neel,q_ea,noise
 
-
-
-
+	else:
+		return (Lx,Ly),temps,distances,energy,magnetization,q_ea,noise
 
 
 
