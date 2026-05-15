@@ -82,6 +82,20 @@ class lattice:
 		### This needs to be symmetric in the end 
 		self.J_matrix = 0.5*(self.J_matrix + np.transpose(self.J_matrix))
 		
+	### This will set nearest neighbor coupling to be a Gaussian distribution 
+	def set_nn_Gaussian(self,Javg,Jstd):
+		self.Jnn_avg = Javg
+		self.Jnn_std = Jstd
+		
+		for i in self.sites:
+			for j in self.nns[i]:
+				self.J_matrix[j,i] = self.rng.normal(self.Jnn_avg,self.Jnn_std) 
+				
+			self.partners.append(self.nns[i])
+			
+		self.J_matrix = 0.5*(self.J_matrix + np.transpose(self.J_matrix)) 
+		
+		
 	### Sets the next-nearest-neighbor couplings with optional choice between value and 0 
 	def set_nnn_J(self,Jnnn,p=1.):
 		self.Jnnn = Jnnn
@@ -96,6 +110,16 @@ class lattice:
 			
 		### This needs to be symmetric in the end 
 		self.J_matrix = 0.5*(self.J_matrix + np.transpose(self.J_matrix))
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
 		
 		
 	

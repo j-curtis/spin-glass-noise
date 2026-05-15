@@ -131,7 +131,31 @@ def run_sims_low_mem_nnn(save_filename,L,nsweeps,temps,distances,replica,Jnnn,p,
         	pickle.dump((J_matrix,energies,magnetization,neel,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
         	
 
+
+
+### Saves a compact output and is low memory usage during operation 
+### Built to work with arbitrary generated lattice objects that are then passed as arguments 
+def run_sims_lattice(save_filename,lattice_object,nsweeps,temps,distances,replica):
+	L = int(lattice_object.L)
+	Lx = L 
+	Ly = L 
+	
+	nsweeps = int(nsweeps)
+	replica = int(replica) 
+
+	energies, magnetization, neel, qea, noise = glauber.anneal_dynamics_lattice(lattice_object,nsweeps,temps,distances)
+		
+	### Due to large memory of spin configurations we will now compute derived observables to save 
+	### 1) Energy vs time 
+	### 2) Magnetization vs time 
+	### 3) Neel order vs time 
+	### 4) Edwards-Anderson OP vs time 
+	### 5) Local noise for different distances vs time 
+	
+	with open(save_filename, 'wb') as out_file:
+        	pickle.dump((J_matrix,energies,magnetization,neel,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the J config
         	
+      	
         	
         	
 ### Processing scripts for quench and annealing runs 
