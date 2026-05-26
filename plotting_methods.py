@@ -200,7 +200,8 @@ def plot_noise_spectra(temps,distances,noise,logx=False,logy=True):
 	return figs_noise_vs_freq	
 	
 	
-def plot_frozen_moment(temps,distances,q_ea,noise):
+def plot_frozen_moment(temps,distances,q_ea,noise,logy=[False,True]):
+
 	### First we extract the noise spectra 
 	ws, spectra = nm.calc_gaussian_spectrum(noise,chop_size=500)
 	integrated_spectra = np.trapz(spectra,ws,axis=-1)
@@ -212,6 +213,7 @@ def plot_frozen_moment(temps,distances,q_ea,noise):
 	color = 'blue'
 	ax1.errorbar(temps,np.mean(q_ea,axis=0),np.std(q_ea,axis=0),None,'o-',color=color)
 	ax1.set_ylim(0.,1.)
+	if logy[0]: ax1.set_yscale('log')
 	ax1.set_xlabel(r'$T/J$')
 	ax1.set_ylabel(r'$q_{EA}$',color=color)
 	ax1.tick_params(axis='y',labelcolor=color)
@@ -222,7 +224,7 @@ def plot_frozen_moment(temps,distances,q_ea,noise):
 	for i in range(len(distances)): 
 		ax2.plot(temps,static_noise[:,i]/integrated_spectra[:,i],color=dist_clrs[i],label=r'$d/a=$'+f"{distances[i]:0.2f}")
 	
-	ax2.set_yscale('log')
+	if logy[1]: ax2.set_yscale('log')
 	ax2.legend()
 	ax2.set_ylabel(r'$\mathcal{N}(\omega=0)/\int_\omega \mathcal{N}(\omega)$ [MCS]',color=dist_clrs[0])
 	ax2.tick_params(axis='y',labelcolor=dist_clrs[0])
@@ -327,6 +329,129 @@ def plot_cumulants(temps,distances,noise,sample_size,z_indxs,temp_indxs,plotting
 
 
 	return figs_out
+
+
+### Plotting method if there is also a neel order to show 
+def plot_schedule_neel(energy, mag, neel, temps,area,replicas = [0],mag_window = 100):
+	### Generates plots of energy and magnetization across the annealing schedule 
+	### Also generates a plot of energy vs temperature and magnetic susceptibility vs. temperature 
+	### Selects just a single replica or all replicas 
+	### First we concatenate into a single unified schedule 
+
+	nsweeps = energy.shape[-1]
+	ntemps = len(temps)
+	temps_cat = np.concatenate([ np.ones(nsweeps)*temps[i] for i in range(ntemps) ] )
+
+	temp_clrs = temp_colors(temps) ### Plot color schemes coding temperature
+	
+
+	### Helper functions to extract plot ranges automatically 
+	def extract_range(dataset):
+		vmax = max(dataset)
+		vmin = min(dataset)
+
+		return vmin, vmax
+		
+		
+	### Define the formatter function from https://www.geeksforgeeks.org/data-analysis/formatting-axis-tick-labels-from-numbers-to-thousands-and-millions/
+	import matplotlib.ticker as ticker 
+	def format_func(value, tick_number):
+		return f'{int(value / 1000)}k'
+
+	figs_out = [] 
+    
+	for r in replicas:
+		label = f"annealing_schedule_window={mag_window}_replica={r}"
+		energy_cat = np.concatenate(energy[r,...]/area,axis=0)
+		mag_cat = np.concatenate(mag[r,...],axis=0)
+		neel_cat = np.concatenate(neel[r,...],axis=0)
+        
+		if mag_window >0: 
+			mag_cat = glauber.moving_avg(mag_cat,mag_window)
+			neel_cat = glauber.moving_avg(neel_cat,mag_window)
+
+		### First we generate the plots and subfigures 
+		fig = plt.figure()
+		grid = fig.add_gridspec(3,hspace=.15)
+		axs = grid.subplots(sharex=True)
+
+		### Plot the data sets and label axes 
+		axs[0].plot(energy_cat,color='purple')
+
+		axs[1].plot(mag_cat,color='orange')
+		axs[1].axhline(0.,linestyle='dashed',color='gray')
+
+		axs[2].plot(neel_cat,color='brown')
+		axs[2].axhline(0.,linestyle='dashed',color='gray')
+        
+		axs[0].set_ylabel(r'Energy density [$J$]')
+		axs[1].set_ylabel(r'Magnetization')
+		axs[2].set_ylabel(r'Neel order')
+		axs[2].set_xlabel(r'$t$ [MCS]')
+		axs[2].xaxis.set_major_formatter(ticker.FuncFormatter(format_func))
+
+
+		### Extract y ranges for magnetization 
+		mmin,mmax = extract_range(mag_cat)
+		nmin,nmax = extract_range(neel_cat[10:])
+		emin,emax = extract_range(energy_cat[10:])
+
+		text_yval = 1.12*emin
+		text_xval = 0.333
+		alpha = 0.13
+
+		### Annotate and color code annealing schedule 
+		axs[0].text(-(text_xval+0.7)*nsweeps,text_yval,r'$T/J=$')
+		
+		
+		for i in range(ntemps):
+			axs[0].fill_between(np.arange(len(temps_cat))[i*nsweeps:(i+1)*nsweeps],1.5*emin,facecolor=temp_clrs[i],alpha=alpha)
+			axs[0].text(i*nsweeps+nsweeps*text_xval,text_yval,f"{temps[i]:0.2f}")
+			axs[1].fill_between(np.arange(len(temps_cat))[i*nsweeps:(i+1)*nsweeps],-1.1,1.1,facecolor=temp_clrs[i],alpha=alpha)
+			axs[2].fill_between(np.arange(len(temps_cat))[i*nsweeps:(i+1)*nsweeps],-1.1,1.1,facecolor=temp_clrs[i],alpha=alpha)
+
+		### Set appropriate plot ranges 
+		axs[0].set_ylim(1.05*emin,.95*emax) ### Energy density should be well captured in this range 
+
+		mrange = max(np.abs(mmin),np.abs(mmax))
+		mrange = mrange*1.1
+		axs[1].set_ylim(-mrange,mrange)
+        
+		nrange = max(np.abs(nmin),np.abs(nmax))
+		nrange = nrange*1.1
+		axs[2].set_ylim(-nrange,nrange)
+        
+		for ax in axs: ax.label_outer()
+
+		figs_out.append((fig,label))
+		plt.show()
+
+	### Energy vs. T 
+	chop_size = int(nsweeps//3)
+	label = "internal_energy_heat_capacity_vs_T"
+	#E_vs_T = np.mean(energy[:,:,chop_size:],axis=(0,-1))/area
+	#c_v = (np.std(energy[:,:,chop_size:],axis=(0,-1))/temps)**2/area
+	E_vs_T = np.mean(energy[:,:,-1],axis=0)/area
+	c_v = np.std(energy[:,:,chop_size:],axis=(0,-1))**2/(area*temps**2)
+	
+	fig, ax1 = plt.subplots(1)
+	ax1.plot(temps,E_vs_T,'o-',color='purple',label=r'$U$')
+	ax1.set_xlabel(r'$T/J$')
+	ax1.set_ylabel(r'$U/J$')
+
+	ax2 = ax1.twinx()
+	ax2.plot(temps,c_v,'x-',color='black',label=r'$\Delta E^2/T^2$')
+	ax2.plot(temps,np.gradient(E_vs_T,temps),'o-',color='gray',label=r'$\frac{dU}{dT}$')
+	ax2.set_ylabel(r'$c_V$')
+
+	fig.legend(loc=(0.135,0.8))
+
+	figs_out.append((fig,label))
+	plt.show()
+
+	return figs_out 
+
+
 
 
 
