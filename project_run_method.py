@@ -484,9 +484,200 @@ def process_anneal_observables(timestamp,get_seed=0):
 
 
 
+### Recover and process jobs for annealed dynamics with compactified data structures 
+### Recovers all replicas and seeds 
+### Designed to work for large data sets which could max out the RAM
+### Performs down sampling on the noise spectra one by one and then returns this instead 
+def process_anneal_memory_safe(timestamp,sample_step=100,get_seed=0): 
+	print(f"Recovering observables from anneal calculation, timestamp {timestamp}.")
+	### First lets extract all of the different J matrices 
+	job_no = io.recover_job_no(timestamp = timestamp)
+	print(f"Total jobs: {job_no}")
+
+	seeds = [] ### We will also use a list to store the different seeds
+	jobs_by_seed = {} ### Jobs which have the given seed 
+	
+	replicas_by_job = {}
+	
+	### Get all the different seeds and replicas for each job with a particular seed and replica 
+	for job in range(job_no):
+		inputs,data = io.get_results(timestamp=timestamp,run_index=job)
+		seed = str(int(inputs['J_seed']))
+		replica = int(inputs['replica'])
+		try:
+			Lx = int(inputs['Lx'])
+			Ly = int(inputs['Ly'])
+		except:
+			L = int(inputs['L'])
+			Lx = L 
+			Ly = L 
+			
+		replicas_by_job[job] = replica
+
+		if seed not in seeds: 
+			seeds.append(seed) 
+			jobs_by_seed[seed] = [ job ]
+
+		else:
+			(jobs_by_seed[seed]).append(job)
+
+	energy = []
+	magnetization = [] 
+	neel = [] 
+	extract_neel = False ### Flag that if activated indicates there is also data on Neel ordering 
+	q_ea = []
+	noise = [] 
+    
+	temps = [] 
+	distances = [] 
+	jobs = jobs_by_seed[seeds[get_seed]]
+
+	for job in jobs:
+
+		inputs, data = io.get_results(timestamp = timestamp,run_index = job)
+		if len(data) > 5: extract_neel = True 
+		try:
+			if not extract_neel:
+				J, energy_tmp, magnetization_tmp, q_ea_tmp, noise_tmp = data
+			if extract_neel:
+				J, energy_tmp, magnetization_tmp, neel_tmp, q_ea_tmp, noise_tmp = data
+			energy.append(energy_tmp)
+			magnetization.append(magnetization_tmp)
+			if extract_neel: neel.append(neel_tmp) 
+			q_ea.append(q_ea_tmp)
+			
+			### Here we need to down sample the noise to reduce memory demands 
+			noise_tmp = nm.down_sample(noise_tmp,chop_size=0,sample_size=sample_step)
+			noise.append(noise_tmp) 
+
+		except:
+			print("Error parsing data.")
+
+		temps = inputs['temps']
+		distances = inputs['distances']
+
+		seed = str(int(inputs['J_seed']))
+		replica= inputs['replica']
+		#print(f"Job: {job} loaded.") 
+
+    
+	### Now we stack the spins by replica 
+	print("Stacking data")
+	energy = np.stack(energy,axis=0)
+	magnetization = np.stack(magnetization,axis=0)
+	if extract_neel: neel = np.stack(neel,axis=0)
+	q_ea = np.stack(q_ea,axis=0)
+	noise = np.stack(noise,axis=0) 
+
+	temps = np.array(temps)
+	distances = np.array(distances)
+
+	if extract_neel:
+		return (Lx,Ly),temps,distances,energy,magnetization,neel,q_ea,noise
+
+	else:
+		return (Lx,Ly),temps,distances,energy,magnetization,q_ea,noise
 
 
 
+
+
+
+
+### This method loads big data sets from qdem 
+def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
+	from demler_tools import file_manager as fm
+
+	### First we point demler_tools to the file location 
+	job_no = fm.file_management_local_backend.read_folder_job_no(qdem_path+timestamp)
+
+	print(f"Total jobs: {job_no}")
+	get_seed=0
+	get_replicas = range(10) 
+	seeds = [] ### We will also use a list to store the different seeds
+	jobs_by_seed = {} ### Jobs which have the given seed 
+
+	replicas_by_job = {}
+
+	### Get all the different seeds and replicas for each job with a particular seed and replica 
+	for job in range(job_no):
+		inputs,data = fm.file_management_local_backend.read_run_raw_data(qdem_path+timestamp,run_index=job)
+		if len(data)>5: extract_neel = True 
+		seed = str(int(inputs['J_seed']))
+		replica = int(inputs['replica'])
+		try:
+			Lx = int(inputs['Lx'])
+			Ly = int(inputs['Ly'])
+		except:
+			L = int(inputs['L'])
+			Lx = L 
+			Ly = L 
+
+		replicas_by_job[job] = replica
+
+		if seed not in seeds: 
+			seeds.append(seed) 
+			jobs_by_seed[seed] = [ job ]
+
+		else:
+			(jobs_by_seed[seed]).append(job)
+
+
+	energy = []
+	magnetization = [] 
+	neel = [] 
+	extract_neel = False ### Flag that if activated indicates there is also data on Neel ordering 
+	q_ea = []
+	noise = [] 
+
+	temps = [] 
+	distances = [] 
+	jobs = jobs_by_seed[seeds[get_seed]]
+
+	for job in jobs:
+
+		inputs, data = fm.file_management_local_backend.read_run_raw_data(qdem_path+timestamp,run_index=job)
+		try:
+			if not extract_neel:
+				J, energy_tmp, magnetization_tmp, q_ea_tmp, noise_tmp = data
+			if extract_neel:
+				J, energy_tmp, magnetization_tmp, neel_tmp, q_ea_tmp, noise_tmp = data
+			energy.append(energy_tmp)
+			magnetization.append(magnetization_tmp)
+			if extract_neel: neel.append(neel_tmp) 
+			q_ea.append(q_ea_tmp)
+			noise.append(noise_tmp) 
+
+		except:
+			print("Error parsing data.")
+
+		temps = inputs['temps']
+		distances = inputs['distances']
+
+		seed = str(int(inputs['J_seed']))
+		replica= inputs['replica']
+		#print(f"Job: {job} loaded.") 
+
+
+	### Now we stack the spins by replica 
+	print("Stacking data")
+	energy = np.stack(energy,axis=0)
+	magnetization = np.stack(magnetization,axis=0)
+	if extract_neel: neel = np.stack(neel,axis=0)
+	q_ea = np.stack(q_ea,axis=0)
+	noise = np.stack(noise,axis=0) 
+
+	temps = np.array(temps)
+	distances = np.array(distances)
+	print("Data is done being loaded.")
+
+	if extract_neel:
+		return (Lx,Ly),temps,distances,energy,magnetization,neel,q_ea,noise
+
+	else:
+		return (Lx,Ly),temps,distances,energy,magnetization,q_ea,noise
+    	
+	
 
 
 
