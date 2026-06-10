@@ -589,7 +589,7 @@ def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
 	from demler_tools import file_manager as fm
 
 	### First we point demler_tools to the file location 
-	job_no = fm.file_management_local_backend.read_folder_job_no(qdem_path+timestamp)
+	job_no = fm.file_management_local_backend.read_folder_job_no(path+timestamp)
 
 	print(f"Total jobs: {job_no}")
 	get_seed=0
@@ -601,7 +601,7 @@ def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
 
 	### Get all the different seeds and replicas for each job with a particular seed and replica 
 	for job in range(job_no):
-		inputs,data = fm.file_management_local_backend.read_run_raw_data(qdem_path+timestamp,run_index=job)
+		inputs,data = fm.file_management_local_backend.read_run_raw_data(path+timestamp,run_index=job)
 		if len(data)>5: extract_neel = True 
 		seed = str(int(inputs['J_seed']))
 		replica = int(inputs['replica'])
@@ -636,7 +636,7 @@ def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
 
 	for job in jobs:
 
-		inputs, data = fm.file_management_local_backend.read_run_raw_data(qdem_path+timestamp,run_index=job)
+		inputs, data = fm.file_management_local_backend.read_run_raw_data(path+timestamp,run_index=job)
 		try:
 			if not extract_neel:
 				J, energy_tmp, magnetization_tmp, q_ea_tmp, noise_tmp = data
@@ -675,7 +675,7 @@ def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
 		return (Lx,Ly),temps,distances,energy,magnetization,neel,q_ea,noise
 
 	else:
-		return (Lx,Ly),temps,distances,energy,magnetization,q_ea,noise
+		return (Lx,Ly),temps,distances,energy,magnetization,None,q_ea,noise
     	
 	
 

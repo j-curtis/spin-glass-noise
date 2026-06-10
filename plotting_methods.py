@@ -31,7 +31,7 @@ def dist_colors(dists):
 	
 	return dist_clrs
 
-def plot_schedule(energy, mag, temps,area,replicas = [0],mag_window = 100):
+def plot_schedule_no_neel(energy, mag, temps,area,replicas = [0],mag_window = 100):
 	### Generates plots of energy and magnetization across the annealing schedule 
 	### Also generates a plot of energy vs temperature and magnetic susceptibility vs. temperature 
 	### Selects just a single replica or all replicas 
@@ -451,8 +451,12 @@ def plot_schedule_neel(energy, mag, neel, temps,area,replicas = [0],mag_window =
 
 	return figs_out 
 
-
-
+### Wrapper which handles both with or without neel order being passed 
+def plot_schedule(energy, mag, neel, temps, area,replicas = [0],mag_window = 100):
+	if neel is None:
+		return plot_schedule_no_neel(energy, mag, temps,area,replicas,mag_window)
+	else:
+		return plot_schedule_neel(energy, mag, neel, temps,area,replicas,mag_window)
 
 
 def run_annealing_plot_suite(timestamps,sample_size,z_indxs,temp_indxs,plotting_time_step,save_figs=False,window=100):
