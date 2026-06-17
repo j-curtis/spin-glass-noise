@@ -3,8 +3,11 @@
 ### 06/17/2026
 
 ### Streamlined and cleaned-up version of old code which is now built to be more efficient and handle arbitrary lattices 
+### !!! Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
+
 
 import numpy as np 
+import lattice_methods as lm
 import pickle
 
 ### This method will initialize an array of the chosen size to either a random or uniform state 
@@ -170,9 +173,15 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 
 
 ### Saves a compact output and is low memory usage during operation 
-### Built to work with arbitrary generated lattice objects that are then passed as arguments 
-def run_sims_lattice(save_filename,lattice_object,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None):
-	L = int(lattice_object.L)
+### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
+
+def run_sims_lattice(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None):
+	L = int(L)
+	J_seed = int(J_seed)
+	
+	latt = lm.lattice(L)
+	latt.set_seed(J_seed)
+	latt.set_nnn_J(Jnnn,p)
 	Lx = L 
 	Ly = L 
 	
