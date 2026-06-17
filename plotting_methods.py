@@ -133,7 +133,7 @@ def plot_schedule_no_neel(energy, mag, temps,area,replicas = [0],mag_window = 10
 	return figs_out 
 	
 	
-def plot_noise_spectra(temps,distances,noise,logx=False,logy=True):
+def plot_noise_spectra(temps,distances,noise,logx=False,logy=True,show_distance_plots = True ):
 
 	label_suffix_func = lambda val: 'log' if val else 'lin' 
 	label_suffix = "_"+label_suffix_func(logx)+"_"+label_suffix_func(logy)
@@ -175,26 +175,28 @@ def plot_noise_spectra(temps,distances,noise,logx=False,logy=True):
 		plt.show()
 
 	### Now we generate a series of plots for each temperature along with labels 
-	for i in range(0,ntemps,3):
-		label = f"noise_vs_freq_T={temps[i]:0.2f}"+label_suffix
+	if show_distance_plots:
+		for i in range(0,ntemps,3):
+			label = f"noise_vs_freq_T={temps[i]:0.2f}"+label_suffix
 
-		fig, ax = plt.subplots(1)
-		fig.set_figwidth(fw)
-		fig.set_figheight(fh)
-		
-		for j in range(ndistances):
-			ax.plot(ws[1:],spectrum[i,j,1:],color=dist_clrs[j],label=r'$d/a=$'+f"{distances[j]:0.0f}")
-		ax.set_xlabel(r'$\omega/2\pi$ [MCS$^{-1}$]')
-		ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [MCS]')
-		if logy: ax.set_yscale('log')
-		if logx: ax.set_xscale('log')
-		ax.legend()
-		ax.set_title(r'$T/J=$'+f"{temps[i]:0.2f}")
-		ax.set_xlim(1.e-5,5.e-2)
-		ax.set_ylim(1.e-3,1.e3)
+			fig, ax = plt.subplots(1)
+			fig.set_figwidth(fw)
+			fig.set_figheight(fh)
+			
+			for j in range(ndistances):
+				ax.plot(ws[1:],spectrum[i,j,1:],color=dist_clrs[j],label=r'$d/a=$'+f"{distances[j]:0.0f}")
+			ax.set_xlabel(r'$\omega/2\pi$ [MCS$^{-1}$]')
+			ax.set_ylabel(r'$\langle |B(\omega,z)|^2$ [MCS]')
+			if logy: ax.set_yscale('log')
+			if logx: ax.set_xscale('log')
+			ax.legend()
+			ax.set_title(r'$T/J=$'+f"{temps[i]:0.2f}")
+			ax.set_xlim(1.e-5,5.e-2)
+			ax.set_ylim(1.e-3,1.e3)
 		    
-		figs_noise_vs_freq.append((fig,label))
-		plt.show()
+
+			figs_noise_vs_freq.append((fig,label))
+			plt.show()
 
 
 	return figs_noise_vs_freq	
