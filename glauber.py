@@ -2,6 +2,9 @@
 ### Jonathan Curtis 
 ### 11/01/2025
 
+### !!! DEPRECATED 
+### This set of methods is legacy and is deprecated. Current methods have been moved to glauber_dynamics.py module
+
 import numpy as np 
 import time 
 
