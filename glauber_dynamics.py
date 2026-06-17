@@ -175,10 +175,10 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 ### Saves a compact output and is low memory usage during operation 
 ### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
 
-def run_sims_lattice(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None):
+def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None):
 	L = int(L)
 	J_seed = int(J_seed)
-	
+
 	latt = lm.lattice(L)
 	latt.set_seed(J_seed)
 	latt.set_nnn_J(Jnnn,p)
