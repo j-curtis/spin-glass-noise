@@ -70,7 +70,7 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 	### Assumes spin qubit is a distance d away in the center of the sample 
 
 	### The magnetization in the z direction a distance d away is given in terms of the spins as 
-	### B_z(t) = mu_0 mu_B mu_mat/(4 pi) sum_j S_j(t) (2d^2 - R_j^2)/(R_j^2 + d^2)^(3/2) 
+	### B_z(t) = mu_0 mu_B mu_mat/(4 pi) sum_j S_j(t) (2d^2 - R_j^2)/(R_j^2 + d^2)^(5/2) 
 
 	X,Y = np.meshgrid(np.arange(Lx)-Lx//2, np.arange(Ly)-Ly//2,indexing='ij')
 
@@ -181,6 +181,7 @@ def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initi
 
 	latt = lm.lattice(L)
 	latt.set_seed(J_seed)
+	latt.set_nn_J(1.,1.)
 	latt.set_nnn_J(Jnnn,p)
 	Lx = L 
 	Ly = L 
