@@ -183,11 +183,8 @@ def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initi
 	latt.set_seed(J_seed)
 	latt.set_nn_J(1.,1.)
 	latt.set_nnn_J(Jnnn,p)
-	Lx = L 
-	Ly = L 
 	
 	nsweeps = int(nsweeps)
-	replica = int(replica) 
 
 	energies, magnetization, neel, qea, noise = anneal_dynamics_lattice(latt,nsweeps,temps,distances,initial_seed,dynamics_seed)
 		
