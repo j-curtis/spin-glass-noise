@@ -31,7 +31,8 @@ class dynamics:
 		temp,
 		anisotropy=0.,
 		gilbert = 1., 
-		dt=1.0e-3
+		dt=1.0e-3,
+		distances=None,
 	):
 
 		### Lattice object encodes geometry and (possibly frustrated) couplings
@@ -46,6 +47,12 @@ class dynamics:
 
 		### Temperature
 		self.temp = float(temp)
+
+		### Optional distances for computing local magnetic field traces
+		self.distances = None if distances is None else np.atleast_1d(np.asarray(distances,dtype=float))
+		self._magnetic_field_kernel = None
+		if self.distances is not None:
+			self._magnetic_field_kernel = self.latt.magnetic_field_mask_tensor(self.distances)
 
 		### Number of stored time points. The initial state is sample 0.
 		self.nsteps = int(nsteps)
@@ -69,6 +76,8 @@ class dynamics:
 	def set_seed(self, seed):
 		self.seed = seed
 		self.rng = np.random.default_rng(self.seed)
+		### We also reset the initial state using the newly set generator 
+		self.angles = self._random_angles() 
 
 	### Initialize dynamics from an existing rng stream
 	def set_rng(self, rng, seed=None):
@@ -76,10 +85,11 @@ class dynamics:
 		self.rng = rng
 
 	### Initialize angles to a random state
-	def _random_angles(self):
+	def _random_angles(self, seed=None):
+		rng = self.rng if seed is None else np.random.default_rng(seed)
 		angles = np.zeros(self.angle_shape)
-		angles[1,:] = self.rng.uniform(0.,TWOPI,self.latt.N)
-		angles[0,:] = np.arccos(self.rng.uniform(-1.,1.,self.latt.N))
+		angles[1,:] = rng.uniform(0.,TWOPI,self.latt.N)
+		angles[0,:] = np.arccos(rng.uniform(-1.,1.,self.latt.N))
 		return angles 
 
 	### Set angles to a preset state (useful for annealing from a previous run)
@@ -166,12 +176,9 @@ class dynamics:
 		### The deterministic field is the exchange contribution plus anisotropy
 		return self._exchange_field(spins) + self._anisotropy_field(spins)
 
-	def _thermal_field(self, T):
+	def _thermal_field(self):
 		### Brown field amplitude is fixed by the fluctuation-dissipation relation
-		if T <= 0.0 or self.gilbert == 0.0:
-			return np.zeros((3, self.latt.N))
-
-		std = np.sqrt(2.0 * self.gilbert * T / self.dt)
+		std = np.sqrt(2.0 * self.gilbert * self.temp / self.dt)
 		return self.rng.normal(scale=std, size=(3, self.latt.N))
 
 	def _llg_rhs(self, spins, field):
@@ -183,70 +190,29 @@ class dynamics:
 
 		return prefactor * (precession + alpha * damping)
 
-	@staticmethod
-	def _angular_basis(angles):
-		### Local tangent basis on the sphere at each spin
-		theta = angles[0, :]
-		phi = angles[1, :]
-		e_theta = np.stack([
-			np.cos(theta) * np.cos(phi),
-			np.cos(theta) * np.sin(phi),
-			-np.sin(theta),
-		])
-		e_phi = np.stack([
-			-np.sin(phi),
-			np.cos(phi),
-			np.zeros_like(phi),
-		])
-		return e_theta, e_phi
-
-	def _angles_rhs(self, angles, field):
-		### Project the vector LLG equation onto theta_dot and phi_dot
-		spins = self.angle_to_vector(angles)
-		spin_rhs = self._llg_rhs(spins, field)
-		e_theta, e_phi = self._angular_basis(angles)
-
-		theta_dot = np.sum(spin_rhs * e_theta, axis=0)
-		sin_theta = np.sin(angles[0, :])
-		phi_dot = np.zeros_like(theta_dot)
-		away_from_poles = np.abs(sin_theta) > 1.0e-12
-		phi_dot[away_from_poles] = (
-			np.sum(spin_rhs[:, away_from_poles] * e_phi[:, away_from_poles], axis=0)
-			/ sin_theta[away_from_poles]
-		)
-
-		return np.stack([theta_dot, phi_dot])
-
-	def _single_time_step(self, angles, T):
+	def _single_time_step(self, angles):
 		"""
-		Advance one stochastic LLG step using a Heun predictor-corrector.
-
-		The same Brown thermal field is used in the predictor and corrector.  This
-		is the standard lightweight choice for multiplicative LLG noise and is much
-		more stable than a bare Euler step.
+		Advance one stochastic LLG step using projected Euler dynamics.
 		"""
-		### Convert angles to vectors only for field evaluation
+		### Convert angles to vectors for the actual dynamical update
 		angles = self._wrap_angles(angles)
 		spins = self.angle_to_vector(angles)
-		noise = self._thermal_field(T)
+		noise = self._thermal_field()
 
-		### Predictor step in angular coordinates
+		### Euler step in vector spin space
+		### TODO: This is the natural place to upgrade to a fixed-step midpoint method if more stability is needed
 		field = self._effective_field(spins) + noise
-		k1 = self._angles_rhs(angles, field)
+		spin_rhs = self._llg_rhs(spins, field)
+		next_spins = spins + self.dt * spin_rhs
 
-		### Corrector uses the same stochastic field for this timestep
-		predicted_angles = self._wrap_angles(angles + self.dt * k1)
-		predicted_spins = self.angle_to_vector(predicted_angles)
-		predicted_field = self._effective_field(predicted_spins) + noise
-		k2 = self._angles_rhs(predicted_angles, predicted_field)
-
-		return self._wrap_angles(angles + 0.5 * self.dt * (k1 + k2))
+		### Project back to the unit sphere before converting to angle storage
+		next_spins /= np.linalg.norm(next_spins, axis=0)[None, :]
+		return self.vector_to_angles(next_spins)
 
 	### Advance the internal angular state by one fixed-temperature timestep
-	def step(self, T=None):
-		if T is None:
-			T = self.temp
-		self.angles = self._single_time_step(self.angles, float(T))
+	def step(self):
+	
+		self.angles = self._single_time_step(self.angles)
 		return self.angles
 
 	def energy(self, spins=None):
@@ -270,10 +236,17 @@ class dynamics:
 		if spins is None:
 			spins = self.spins
 
-		L = int(self.latt.L)
-		X, Y = np.meshgrid(np.arange(L), np.arange(L), indexing="ij")
-		mask = (-np.ones(self.latt.N, dtype=int)) ** (X + Y).ravel()
+		mask = self.latt.neel_mask()
 		return np.mean(spins * mask[None, :], axis=1)
+
+	def magnetic_field(self, spins=None):
+		### Local magnetic field from the lattice-provided dipolar tensor
+		if self._magnetic_field_kernel is None:
+			return None
+		if spins is None:
+			spins = self.spins
+
+		return np.einsum("abnd,bn->ad", self._magnetic_field_kernel, spins)
 
 	def run(self, initial_spins=None, initial_angles=None, save_trajectory=False):
 		### Run fixed-temperature dynamics and sample every timestep from t=0
@@ -289,6 +262,9 @@ class dynamics:
 		energies = np.zeros(self.nsteps)
 		magnetizations = np.zeros((self.nsteps, 3))
 		neels = np.zeros((self.nsteps, 3))
+		magnetic_fields = None
+		if self.distances is not None:
+			magnetic_fields = np.zeros((self.nsteps, 3, len(self.distances)))
 		frozen_moment = np.zeros(self.spins_shape)
 
 		for i in range(self.nsteps):
@@ -302,15 +278,17 @@ class dynamics:
 			energies[i] = self.energy(spins)
 			magnetizations[i, :] = self.magnetization(spins)
 			neels[i, :] = self.neel_order(spins)
+			if magnetic_fields is not None:
+				magnetic_fields[i, ...] = self.magnetic_field(spins)
 			frozen_moment += spins
 
 		frozen_moment /= float(self.nsteps)
 		q_ea = np.mean(np.sum(frozen_moment**2, axis=0))
 
 		if save_trajectory:
-			return energies, magnetizations, neels, q_ea, angle_samples, spin_samples
+			return energies, magnetizations, neels, q_ea, magnetic_fields, angle_samples, spin_samples
 
-		return energies, magnetizations, neels, q_ea
+		return energies, magnetizations, neels, q_ea, magnetic_fields
 
 
 def anneal_dynamics_lattice(
@@ -320,6 +298,7 @@ def anneal_dynamics_lattice(
 	dt=1.0e-3,
 	gilbert=0.1,
 	anisotropy=0.0,
+	distances=None,
 	initial_seed=None,
 	dynamics_seed=None,
 	save_trajectory=False,
@@ -333,20 +312,19 @@ def anneal_dynamics_lattice(
 	temperature_schedule = np.atleast_1d(np.asarray(temperature_schedule, dtype=float))
 	nT = len(temperature_schedule)
 	nsteps = int(nsteps)
+	distances = None if distances is None else np.atleast_1d(np.asarray(distances,dtype=float))
 
 	angle_samples = np.zeros((nT, nsteps, 2, lattice.N)) if save_trajectory else None
 	spin_samples = np.zeros((nT, nsteps, 3, lattice.N)) if save_trajectory else None
 	energies = np.zeros((nT, nsteps))
 	magnetization = np.zeros((nT, nsteps, 3))
 	neel = np.zeros((nT, nsteps, 3))
+	magnetic_fields = None
+	if distances is not None:
+		magnetic_fields = np.zeros((nT, nsteps, 3, len(distances)))
 	qea = np.zeros(nT)
 
-	previous_angles = None
-	if initial_seed is not None:
-		initial_rng = np.random.default_rng(initial_seed)
-		previous_angles = np.zeros((2, lattice.N))
-		previous_angles[1, :] = initial_rng.uniform(0.0, TWOPI, lattice.N)
-		previous_angles[0, :] = np.arccos(initial_rng.uniform(-1.0, 1.0, lattice.N))
+	previous_angles = None 
 
 	### Use one reproducible RNG stream for all temperatures if requested
 	dynamics_rng = np.random.default_rng(dynamics_seed) if dynamics_seed is not None else None
@@ -359,30 +337,41 @@ def anneal_dynamics_lattice(
 			anisotropy=anisotropy,
 			gilbert=gilbert,
 			dt=dt,
+			distances=distances,
 		)
-		if dynamics_rng is not None:
-			sim.set_rng(dynamics_rng, seed=dynamics_seed)
+
+
+		if n == 0 and initial_seed is not None:
+			sim.set_angles(sim._random_angles(seed=initial_seed))
+
 		if previous_angles is not None:
 			sim.set_angles(previous_angles)
+			
+		if dynamics_rng is not None:
+			sim.set_rng(dynamics_rng, seed=dynamics_seed)
+
 
 		if save_trajectory:
-			run_energies, run_mags, run_neel, run_qea, run_angles, run_spins = sim.run(save_trajectory=True)
+			run_energies, run_mags, run_neel, run_qea, run_fields, run_angles, run_spins = sim.run(save_trajectory=True)
 			angle_samples[n, ...] = run_angles
 			spin_samples[n, ...] = run_spins
-			previous_angles = run_angles[-1, ...]
+
 		else:
-			run_energies, run_mags, run_neel, run_qea = sim.run()
-			previous_angles = sim.angles
+			run_energies, run_mags, run_neel, run_qea, run_fields = sim.run()
+
+		previous_angles = sim.angles
 
 		energies[n, :] = run_energies
 		magnetization[n, :, :] = run_mags
 		neel[n, :, :] = run_neel
+		if magnetic_fields is not None:
+			magnetic_fields[n, ...] = run_fields
 		qea[n] = run_qea
 
 	if save_trajectory:
-		return energies, magnetization, neel, qea, angle_samples, spin_samples
+		return energies, magnetization, neel, qea, magnetic_fields, angle_samples, spin_samples
 
-	return energies, magnetization, neel, qea
+	return energies, magnetization, neel, qea, magnetic_fields
 
 
 ### Saves a compact output and is low memory usage during operation
@@ -395,6 +384,7 @@ def run_sims(
 	J_seed,
 	nsteps,
 	temps,
+	distances,
 	replica,
 	anisotropy,
 	gilbert=0.1,
@@ -421,6 +411,7 @@ def run_sims(
 		dt=dt,
 		gilbert=gilbert,
 		anisotropy=anisotropy,
+		distances=distances,
 		initial_seed=initial_seed,
 		dynamics_seed=dynamics_seed,
 		save_trajectory=save_trajectory,
@@ -429,8 +420,8 @@ def run_sims(
 	### By default save only compact observables, not full spin/angle trajectories
 	with open(save_filename, 'wb') as out_file:
 		if save_trajectory:
-			energies, magnetization, neel, qea, angle_samples, spin_samples = results
-			pickle.dump((latt, energies, magnetization, neel, qea, angle_samples, spin_samples), out_file)
+			energies, magnetization, neel, qea, magnetic_fields, angle_samples, spin_samples = results
+			pickle.dump((latt, energies, magnetization, neel, qea, magnetic_fields, angle_samples, spin_samples), out_file)
 		else:
-			energies, magnetization, neel, qea = results
-			pickle.dump((latt, energies, magnetization, neel, qea), out_file)
+			energies, magnetization, neel, qea, magnetic_fields = results
+			pickle.dump((latt, energies, magnetization, neel, qea, magnetic_fields), out_file)

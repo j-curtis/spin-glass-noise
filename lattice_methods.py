@@ -11,8 +11,18 @@ class lattice:
 		self.symmetry_tol = 1.e-7 ### Default tolerance for checking the coupling matrix is symmetric 
 
 		self.L = L 
-		self.N = L*L
+		self.Lx = L 
+		self.Ly = L 
+		self.N = self.Lx*self.Ly
 		self.sites = np.arange(self.N) 
+
+		### Useful for computing various masks and kernels
+		X, Y = np.meshgrid(np.arange(self.Lx)-self.Lx//2, np.arange(self.Ly)-self.Ly//2,indexing='ij')
+
+		self.X = X.ravel()
+		self.Y = Y.ravel() 
+
+		self.R = np.sqrt(self.X**2 + self.Y**2)   
 		
 		### Generate list of nn and nnn sites 
 		self.nns = []
@@ -124,16 +134,43 @@ class lattice:
 
 		return True
 		
+
+	### This method returns a mask for computing the neel order of a set of spins 
+	def neel_mask(self):
+
+		neel_mask = (self.X+self.Y).astype(int)
+
+		return (-1.*np.ones(self.N,dtype=int))**neel_mask
+
+	### This method returns a magnetostatic mask for computing spins -> local magnetic field pipeline 
+	### Gives zz component of full tensor, relevant for Ising z-spins
+	def magnetic_field_mask_zz(self,distances):
+		distances = np.atleast_1d(np.asarray(distances,dtype=float))
+
+		kernels = (2.*distances[None,:]**2 - self.R[:,None]**2)/( self.R[:,None]**2 + distances[None,:]**2)**2.5 ### Has shape [Nspins, Nds] 
+
+		return kernels 
 		
 		
-		
-		
-		
-		
-		
-		
+	### This method returns a magnetostatic mask for computing spins -> local magnetic field pipeline 
+	### Returns full 3x3 tensor for Heisenberg spins 
+	def magnetic_field_mask_tensor(self,distances):
+		distances = np.atleast_1d(np.asarray(distances,dtype=float))
+
+		noise_kernel = np.zeros((3,3,self.N,len(distances)))
+
+		Reff = np.sqrt( self.R[:,None]**2 + distances[None,:]**2 )
+
+		### Dipolar tensor T_ab = (3 r_a r_b - delta_ab r^2)/r^5
+		rvecs = [self.X[:,None], self.Y[:,None], distances[None,:]]
+		for a in range(3):
+			for b in range(3):
+				noise_kernel[a,b,...] = 3.*rvecs[a]*rvecs[b]/Reff**5
+				if a == b:
+					noise_kernel[a,b,...] -= 1./Reff**3
+
+		return noise_kernel
 		
 		
 		
 	
-
