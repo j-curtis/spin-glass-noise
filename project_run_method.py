@@ -678,8 +678,127 @@ def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
 		return (Lx,Ly),temps,distances,energy,magnetization,None,q_ea,noise
     	
 	
+### Extraction for new job sets which have multiple different Jnnn sweeps in one job set 
+def process_nnn_jobs(timestamp): 
+    print(f"Recovering observables from annealing calculation, timestamp {timestamp}.")
+    ### First lets extract all of the different J matrices 
+    job_no = io.recover_job_no(timestamp = timestamp)
+    print(f"Total jobs: {job_no}")
 
+    jobs = [] 
+    jobs_by_Jnnn = {}  
+    jobs_by_pnnn = {} 
+    jobs_by_seed = {} 
+    jobs_by_replica = {}
+    
+    replicas_by_job = {}    
+    
+    params = {}
 
+    ### Get all the different seeds and replicas for each job with a particular seed and replica 
+    for job in range(job_no):
+        inputs,data = io.get_results(timestamp=timestamp,run_index=job)
+        latt, energy, mag, neel, qea, noise = data
+        job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'qea':qea, 'noise':noise }
+        jobs.append(job_data) 
+        
+        Jnnn = inputs['Jnnn']
+        pnnn = inputs['p']
+        seed = int(inputs['J_seed'])
+        replica = int(inputs['replica'])
+        
+        L = int(inputs['L'])
+        temps = inputs['temps']
+        distances = inputs['distances']
+            
+        if 'L' not in params.keys():
+            params['L'] = L
+        if 'temps' not in params.keys():
+            params['temps'] = temps 
+        if 'distances' not in params.keys():
+            params['distances'] = distances 
+
+        replicas_by_job[job] = replica
+        
+        if Jnnn not in jobs_by_Jnnn.keys():
+            jobs_by_Jnnn[Jnnn] = [ job ]
+
+        else: 
+            (jobs_by_Jnnn[Jnnn]).append(job)
+        
+        if pnnn not in jobs_by_pnnn.keys():
+            jobs_by_pnnn[pnnn] = [ job ]
+
+        else: 
+            (jobs_by_pnnn[pnnn]).append(job)
+   
+        if seed not in jobs_by_seed.keys(): 
+            jobs_by_seed[seed] = [ job ]
+
+        else:
+            (jobs_by_seed[seed]).append(job)         
+
+        if replica not in jobs_by_replica.keys():
+            jobs_by_replica[replica] = [ job ] 
+
+        else:
+            (jobs_by_replica[replica]).append(job)
+
+    Jnnn_no = len(jobs_by_Jnnn.keys())
+    pnnn_no = len(jobs_by_pnnn.keys())
+    seed_no = len(jobs_by_seed.keys())
+    latt_no = Jnnn_no*pnnn_no*seed_no 
+    replica_no = len(jobs_by_replica.keys())
+
+    params['Jnnn_no'] = Jnnn_no
+    params['pnnn_no'] = pnnn_no
+    params['seed_no'] = seed_no
+    params['latt_no'] = latt_no
+    params['replica_no'] = replica_no
+    
+    print(f"Number of Jnnns: {Jnnn_no}")
+    print(f"Number of pnnns: {pnnn_no}")
+    print(f"Number of seeds: {seed_no}")
+    print(f"Number of lattices: {latt_no}")
+    print(f"Number of replicas: {replica_no}")
+
+    lattices = [] 
+    energies = [] 
+    mags = [] 
+    neels = [] 
+    qeas = []
+    noises = [] 
+    
+    for Jnnn in jobs_by_Jnnn.keys():
+        for pnnn in jobs_by_pnnn.keys():
+            for seed in jobs_by_seed.keys():
+                ### This now identifies a unique lattice which we can save 
+                job_list=list( set(jobs_by_Jnnn[Jnnn]) & set(jobs_by_pnnn[pnnn]) & set(jobs_by_seed[seed]))
+                latt = jobs[job_list[0]]['latt']
+                lattices.append({'Jnnn':Jnnn, 'pnnn':pnnn, 'seed':seed, 'latt':latt})
+                
+                ### We want to turn each of these jobs into an array stacked over replica 
+                energies_tmp = []
+                mags_tmp = [] 
+                neels_tmp = []
+                qeas_tmp = []
+                noises_tmp = [] 
+                
+                for job in job_list:
+                    energies_tmp.append(jobs[job]['energy'])
+                    mags_tmp.append(jobs[job]['mag'])
+                    neels_tmp.append(jobs[job]['neel'])
+                    qeas_tmp.append(jobs[job]['qea'])
+                    noises_tmp.append(jobs[job]['noise'])
+
+                energies.append(np.stack(energies_tmp))
+                mags.append(np.stack(mags_tmp))
+                neels.append(np.stack(neels_tmp))
+                qeas.append(np.stack(qeas_tmp))
+                noises.append(np.stack(noises_tmp))
+    
+    return params, lattices, energies, mags, neels, qeas, noises 
+            
 
 
 
