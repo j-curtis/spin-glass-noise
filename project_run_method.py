@@ -679,13 +679,14 @@ def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
     	
 	
 ### Extraction for new job sets which have multiple different Jnnn sweeps in one job set 
-def process_nnn_jobs(timestamp): 
+### If get_replicas is not None, we will only extract the set of replicas passed in the list, to save on memory pressure 
+def process_nnn_jobs(timestamp,get_replicas=None): 
     print(f"Recovering observables from annealing calculation, timestamp {timestamp}.")
     ### First lets extract all of the different J matrices 
     job_no = io.recover_job_no(timestamp = timestamp)
     print(f"Total jobs: {job_no}")
 
-    jobs = [] 
+    jobs_data = {}
     jobs_by_Jnnn = {}  
     jobs_by_pnnn = {} 
     jobs_by_seed = {} 
@@ -700,13 +701,15 @@ def process_nnn_jobs(timestamp):
         inputs,data = io.get_results(timestamp=timestamp,run_index=job)
         latt, energy, mag, neel, qea, noise = data
         job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'qea':qea, 'noise':noise }
-        jobs.append(job_data) 
-        
+
         Jnnn = inputs['Jnnn']
         pnnn = inputs['p']
         seed = int(inputs['J_seed'])
         replica = int(inputs['replica'])
         
+        if (get_replicas is not None) and not (replica in get_replicas):
+        	continue
+        	
         L = int(inputs['L'])
         temps = inputs['temps']
         distances = inputs['distances']
@@ -719,7 +722,8 @@ def process_nnn_jobs(timestamp):
             params['distances'] = distances 
 
         replicas_by_job[job] = replica
-        
+       	jobs_data[job] = job_data
+       	
         if Jnnn not in jobs_by_Jnnn.keys():
             jobs_by_Jnnn[Jnnn] = [ job ]
 
@@ -774,7 +778,7 @@ def process_nnn_jobs(timestamp):
             for seed in jobs_by_seed.keys():
                 ### This now identifies a unique lattice which we can save 
                 job_list=list( set(jobs_by_Jnnn[Jnnn]) & set(jobs_by_pnnn[pnnn]) & set(jobs_by_seed[seed]))
-                latt = jobs[job_list[0]]['latt']
+                latt = jobs_data[job_list[0]]['latt']
                 lattices.append({'Jnnn':Jnnn, 'pnnn':pnnn, 'seed':seed, 'latt':latt})
                 
                 ### We want to turn each of these jobs into an array stacked over replica 
@@ -785,11 +789,11 @@ def process_nnn_jobs(timestamp):
                 noises_tmp = [] 
                 
                 for job in job_list:
-                    energies_tmp.append(jobs[job]['energy'])
-                    mags_tmp.append(jobs[job]['mag'])
-                    neels_tmp.append(jobs[job]['neel'])
-                    qeas_tmp.append(jobs[job]['qea'])
-                    noises_tmp.append(jobs[job]['noise'])
+                    energies_tmp.append(jobs_data[job]['energy'])
+                    mags_tmp.append(jobs_data[job]['mag'])
+                    neels_tmp.append(jobs_data[job]['neel'])
+                    qeas_tmp.append(jobs_data[job]['qea'])
+                    noises_tmp.append(jobs_data[job]['noise'])
 
                 energies.append(np.stack(energies_tmp))
                 mags.append(np.stack(mags_tmp))
