@@ -13,23 +13,26 @@ import pickle
 ### This method will initialize an array of the chosen size to either a random or uniform state 
 ### We store the spin in a one dimensional flattened array 
 def initialize_spins(Lx,Ly,random=False,seed=None):
-	spins = np.ones((Lx,Ly))
+	spins = np.ones((Lx,Ly),dtype=np.int8)
 
 	rng = np.random.default_rng()
 	if seed is not None: rng = np.random.default_rng(seed)
 
-	if random: spins = rng.choice([-1,1],Lx*Ly)
+	if random: spins = rng.choice(np.array([-1,1],dtype=np.int8),Lx*Ly)
 
 	return spins.flatten()
 
 ### This method computes the magnetization of a flattened spin configuration
 def calc_mag(spins):
-	return np.mean(spins,axis=-2)
+	spin_values = np.asarray(spins,dtype=float)
+	axis = -2 if spin_values.ndim >= 2 else -1
+	return np.mean(spin_values,axis=axis)
 
 ### This is the total energy of a sampled spin configuration
 ### This is catastrophically slow for even modest sized systems. Need to implement a running tally update of energy 
 def calc_energy(spins,J_matrix):
-	return 0.5*np.tensordot(spins, J_matrix@spins,axes=(0,0))
+	spin_values = np.asarray(spins,dtype=float)
+	return 0.5*np.tensordot(spin_values, J_matrix@spin_values,axes=(0,0))
 
 
 ### Low memory dynamics for generic lattice object passed 
@@ -87,7 +90,7 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 	
 	### For a single spin configuration this returns an array of the magnetic field noises at each distance at each time point
 	def local_noise_field(spins):
-		return np.tensordot(spins,kernels,axes=[0,0]) * mu0*muB/(4.*np.pi*a**3)
+		return np.tensordot(np.asarray(spins,dtype=float),kernels,axes=[0,0]) * mu0*muB/(4.*np.pi*a**3)
 
 	### Implements a single step which there are then Lx x Ly of in a sweep
 	### Modified to only in-place flip
@@ -119,15 +122,15 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 		
 		### Just first time step we compute the observables for the entire system
 		energies[n,0] = calc_energy(spins,lattice.J_matrix)
-		mags[n,0] = np.mean(spins) 
-		neels[n,0] = np.mean(spins*neel_mask)
+		mags[n,0] = calc_mag(spins) 
+		neels[n,0] = np.mean(np.asarray(spins,dtype=float)*neel_mask)
 		
 		### This will be used to derive the q_ea
 		
 		### We need to chop off the first few time steps (we take first 20% to be safe) 
 		chop_size = int(nsweeps//5)   
 		nsweeps_chopped = 0
-		frozen_moment = np.zeros_like(spins) 
+		frozen_moment = np.zeros_like(spins,dtype=float) 
 		
 		### This logs the local magnetic noise 
 		noises[n,:,0] = local_noise_field(spins)
@@ -146,10 +149,10 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 			energies[n,i] = energies[n,i-1] + energy_change
 			
 			### Update the magnetization 
-			mags[n,i] = np.mean(spins) 
+			mags[n,i] = calc_mag(spins) 
 
 			
-			neels[n,i] = np.mean( spins*neel_mask )
+			neels[n,i] = np.mean( np.asarray(spins,dtype=float)*neel_mask )
 
 			### Update the frozen moment if we are past the chop window 
 			if i >= chop_size:
@@ -199,7 +202,5 @@ def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initi
         	pickle.dump((latt,energies,magnetization,neel,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the lattice
         	
       	
-
-
 
 
