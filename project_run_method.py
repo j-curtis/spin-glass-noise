@@ -697,10 +697,21 @@ def process_nnn_jobs(timestamp,get_replicas=None):
     params = {}
 
     ### Get all the different seeds and replicas for each job with a particular seed and replica 
+    extract_stripes = False
+    extract_snapshots = False
     for job in range(job_no):
         inputs,data = io.get_results(timestamp=timestamp,run_index=job)
-        latt, energy, mag, neel, qea, noise = data
-        job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'qea':qea, 'noise':noise }
+        if len(data) == 6:
+            latt, energy, mag, neel, qea, noise = data
+            stripes = None
+            snapshots = None
+        elif len(data) == 8:
+            latt, energy, mag, neel, stripes, qea, noise, snapshots = data
+            extract_stripes = True
+            extract_snapshots = True
+        else:
+            raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
+        job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }
 
         Jnnn = inputs['Jnnn']
         pnnn = inputs['p']
@@ -770,8 +781,10 @@ def process_nnn_jobs(timestamp,get_replicas=None):
     energies = [] 
     mags = [] 
     neels = [] 
+    stripes = []
     qeas = []
     noises = [] 
+    snapshots = []
     
     for Jnnn in jobs_by_Jnnn.keys():
         for pnnn in jobs_by_pnnn.keys():
@@ -785,27 +798,35 @@ def process_nnn_jobs(timestamp,get_replicas=None):
                 energies_tmp = []
                 mags_tmp = [] 
                 neels_tmp = []
+                stripes_tmp = []
                 qeas_tmp = []
                 noises_tmp = [] 
+                snapshots_tmp = []
                 
                 for job in job_list:
                     energies_tmp.append(jobs_data[job]['energy'])
                     mags_tmp.append(jobs_data[job]['mag'])
                     neels_tmp.append(jobs_data[job]['neel'])
+                    if extract_stripes: stripes_tmp.append(jobs_data[job]['stripes'])
                     qeas_tmp.append(jobs_data[job]['qea'])
                     noises_tmp.append(jobs_data[job]['noise'])
+                    if extract_snapshots: snapshots_tmp.append(jobs_data[job]['snapshots'])
 
                 energies.append(np.stack(energies_tmp))
                 mags.append(np.stack(mags_tmp))
                 neels.append(np.stack(neels_tmp))
+                if extract_stripes: stripes.append(np.stack(stripes_tmp))
                 qeas.append(np.stack(qeas_tmp))
                 noises.append(np.stack(noises_tmp))
+                if extract_snapshots: snapshots.append(snapshots_tmp)
     
-    return params, lattices, energies, mags, neels, qeas, noises 
-            
+    if extract_snapshots:
+        return params, lattices, energies, mags, neels, stripes, qeas, noises, snapshots
 
+    if extract_stripes:
+        return params, lattices, energies, mags, neels, stripes, qeas, noises
 
-
+    return params, lattices, energies, mags, neels, qeas, noises
 
 
 

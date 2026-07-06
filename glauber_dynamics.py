@@ -36,18 +36,31 @@ def calc_energy(spins,J_matrix):
 
 
 ### Low memory dynamics for generic lattice object passed 
-def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initial_seed=None,dynamics_seed=None):
+def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None):
 	### Recast single float as an array of length 1 for technical
 	if not isinstance(temperature_schedule,np.ndarray): temperature_schedule = np.atleast_1d(np.asarray(temperature_schedule,dtype=float))
 	if not isinstance(distances,np.ndarray): distances = np.atleast_1d(np.asarray(distances,dtype=float))
-	
+	nsweeps = int(nsweeps)
+
 	rng = np.random.default_rng() ### We reinstantiate the rng 
 	if dynamics_seed is not None: rng = np.random.default_rng(dynamics_seed)
 
 	nTs = len(temperature_schedule)
 	ndists = len(distances)
-	
+
 	nspins = lattice.N
+	snapshots = None
+	snapshot_indices = {}
+	if snapshot_sweeps is not None:
+		snapshot_sweeps = np.atleast_1d(np.asarray(snapshot_sweeps,dtype=int))
+		if len(snapshot_sweeps) > 0:
+			if np.any(snapshot_sweeps < 0) or np.any(snapshot_sweeps >= nsweeps):
+				raise ValueError("snapshot_sweeps must be between 0 and nsweeps - 1.")
+			if len(np.unique(snapshot_sweeps)) != len(snapshot_sweeps):
+				raise ValueError("snapshot_sweeps cannot contain duplicate sweep indices.")
+
+			snapshots = np.zeros((nTs,len(snapshot_sweeps),nspins),dtype=np.int8)
+		snapshot_indices = {int(sweep): idx for idx, sweep in enumerate(snapshot_sweeps)}
 	
 	
 	### We generate output arrays
@@ -55,6 +68,7 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 	mags = np.zeros((nTs,nsweeps))
 	q_eas = np.zeros(nTs)
 	neels = np.zeros((nTs,nsweeps))
+	stripes = np.zeros((2,nTs,nsweeps))
 	noises = np.zeros((nTs,ndists,nsweeps))
 
 
@@ -87,10 +101,17 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 	neel_mask = (X+Y).astype(int)
 	neel_mask = neel_mask.ravel() 
 	neel_mask = (-1.*np.ones(nspins,dtype=int))**neel_mask
+
+	### Masks to compute stripe order along X and Y, respectively
+	stripe_x_mask = np.where((X.astype(int).ravel() % 2) == 0, 1., -1.)
+	stripe_y_mask = np.where((Y.astype(int).ravel() % 2) == 0, 1., -1.)
 	
 	### For a single spin configuration this returns an array of the magnetic field noises at each distance at each time point
 	def local_noise_field(spins):
 		return np.tensordot(np.asarray(spins,dtype=float),kernels,axes=[0,0]) * mu0*muB/(4.*np.pi*a**3)
+
+	def order_parameter(spins,mask):
+		return np.mean(np.asarray(spins,dtype=float)*mask)
 
 	### Implements a single step which there are then Lx x Ly of in a sweep
 	### Modified to only in-place flip
@@ -123,8 +144,12 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 		### Just first time step we compute the observables for the entire system
 		energies[n,0] = calc_energy(spins,lattice.J_matrix)
 		mags[n,0] = calc_mag(spins) 
-		neels[n,0] = np.mean(np.asarray(spins,dtype=float)*neel_mask)
-		
+		neels[n,0] = order_parameter(spins,neel_mask)
+		stripes[0,n,0] = order_parameter(spins,stripe_x_mask)
+		stripes[1,n,0] = order_parameter(spins,stripe_y_mask)
+		if 0 in snapshot_indices:
+			snapshots[n,snapshot_indices[0],:] = spins
+
 		### This will be used to derive the q_ea
 		
 		### We need to chop off the first few time steps (we take first 20% to be safe) 
@@ -152,7 +177,9 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 			mags[n,i] = calc_mag(spins) 
 
 			
-			neels[n,i] = np.mean( np.asarray(spins,dtype=float)*neel_mask )
+			neels[n,i] = order_parameter(spins,neel_mask)
+			stripes[0,n,i] = order_parameter(spins,stripe_x_mask)
+			stripes[1,n,i] = order_parameter(spins,stripe_y_mask)
 
 			### Update the frozen moment if we are past the chop window 
 			if i >= chop_size:
@@ -162,6 +189,8 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 
 			### Log the local magnetic fields 
 			noises[n,:,i] = local_noise_field(spins) 
+			if i in snapshot_indices:
+				snapshots[n,snapshot_indices[i],:] = spins
 			
 			### Spins is now updated for the next loop/annealing epoch 
 		
@@ -171,14 +200,14 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 			q_eas[n] = np.mean(frozen_moment**2) ### Average over volume 
 		
 
-	return energies, mags, neels, q_eas, noises
+	return energies, mags, neels, stripes, q_eas, noises, snapshots
 
 
 
 ### Saves a compact output and is low memory usage during operation 
 ### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
 
-def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None):
+def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None):
 	L = int(L)
 	J_seed = int(J_seed)
 
@@ -189,18 +218,26 @@ def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initi
 	
 	nsweeps = int(nsweeps)
 
-	energies, magnetization, neel, qea, noise = anneal_dynamics_lattice(latt,nsweeps,temps,distances,initial_seed,dynamics_seed)
+	energies, magnetization, neel, stripes, qea, noise, snapshots = anneal_dynamics_lattice(
+		latt,
+		nsweeps,
+		temps,
+		distances,
+		initial_seed=initial_seed,
+		dynamics_seed=dynamics_seed,
+		snapshot_sweeps=snapshot_sweeps,
+	)
 		
 	### Due to large memory of spin configurations we will now compute derived observables to save 
 	### 1) Energy vs time 
 	### 2) Magnetization vs time 
 	### 3) Neel order vs time 
-	### 4) Edwards-Anderson OP vs time 
-	### 5) Local noise for different distances vs time 
+	### 4) Stripe order vs time
+	### 5) Edwards-Anderson OP vs time
+	### 6) Local noise for different distances vs time
+	### 7) Optional sampled spin snapshots
 	
 	with open(save_filename, 'wb') as out_file:
-        	pickle.dump((latt,energies,magnetization,neel,qea,noise), out_file) ### We store the output spin trajectory, the annealing schedule, and the lattice
+		pickle.dump((latt,energies,magnetization,neel,stripes,qea,noise,snapshots), out_file) ### We store the compact observables and the lattice
         	
       	
-
-
