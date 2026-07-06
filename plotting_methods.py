@@ -77,8 +77,8 @@ def plot_schedule_no_neel(energy, mag, temps,area,replicas = [0],mag_window = 10
 		axs[1].plot(mag_cat,color='orange')
 		axs[1].axhline(0.,linestyle='dashed',color='gray')
 
-		axs[0].set_ylabel(r'Energy density [$J$]')
-		axs[1].set_ylabel(r'Magnetization')
+		axs[0].set_ylabel(r'$E/(JL^2)$')
+		axs[1].set_ylabel(r'$\langle M\rangle/L^2')
 		axs[1].set_xlabel(r'$t$ [MCS]')
 		axs[1].xaxis.set_major_formatter(ticker.FuncFormatter(format_func))
 
@@ -386,9 +386,9 @@ def plot_schedule_neel(energy, mag, neel, temps,area,replicas = [0],mag_window =
 		axs[2].plot(neel_cat,color='brown')
 		axs[2].axhline(0.,linestyle='dashed',color='gray')
         
-		axs[0].set_ylabel(r'Energy density [$J$]')
-		axs[1].set_ylabel(r'Magnetization')
-		axs[2].set_ylabel(r'Neel order')
+		axs[0].set_ylabel(r'$E/L^2$ [$J$]')
+		axs[1].set_ylabel(r'$\langle M_z\rangle/L^2$')
+		axs[2].set_ylabel(r'$\langle N_z\rangle/L^2$')
 		axs[2].set_xlabel(r'$t$ [MCS]')
 		axs[2].xaxis.set_major_formatter(ticker.FuncFormatter(format_func))
 
