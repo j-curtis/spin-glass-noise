@@ -59,9 +59,11 @@ class lattice:
 			self.nns.append(nns_site)
 			self.nnns.append(nnns_site)
 			self.partners.append(partners_site)
-			
-		self.seed = None 
+
+		self.seed = None
 		self.rng = np.random.default_rng()
+		self._interaction_colors = None
+		self._interaction_color_classes = None
 
 	### Flattened index to a coordinate in real space 
 	def index_to_coordinate(self,i):
@@ -133,7 +135,59 @@ class lattice:
 			raise ValueError(f"Coupling matrix is not symmetric: max asymmetry = {max_asymmetry}")
 
 		return True
-		
+
+	### Greedy graph coloring of the interaction graph defined by partners
+	def interaction_colors(self,force_recompute=False):
+		if (self._interaction_colors is not None) and not force_recompute:
+			return self._interaction_colors.copy()
+		if len(self.partners) != self.N:
+			raise ValueError("partners must contain one neighbor list for each lattice site.")
+
+		adjacency = [set() for i in self.sites]
+		for i in self.sites:
+			for j in self.partners[i]:
+				j = int(j)
+				if j == i:
+					continue
+				if j < 0 or j >= self.N:
+					raise ValueError(f"Partner index {j} for site {i} is outside the lattice.")
+				adjacency[i].add(j)
+				adjacency[j].add(int(i))
+
+		### Color high-degree sites first for a compact, deterministic coloring
+		site_order = sorted(self.sites,key=lambda i: len(adjacency[i]),reverse=True)
+		colors = -1*np.ones(self.N,dtype=int)
+
+		for i in site_order:
+			used_colors = {colors[j] for j in adjacency[i] if colors[j] >= 0}
+			color = 0
+			while color in used_colors:
+				color += 1
+			colors[i] = color
+
+		self._interaction_colors = colors
+		self._interaction_color_classes = [
+			np.where(colors == color)[0] for color in range(np.max(colors)+1)
+		]
+
+		return colors.copy()
+
+	### Returns arrays of sites which can be updated independently
+	def interaction_color_classes(self,force_recompute=False):
+		if (self._interaction_color_classes is None) or force_recompute:
+			self.interaction_colors(force_recompute=force_recompute)
+
+		return [sites.copy() for sites in self._interaction_color_classes]
+
+	### Check that no interacting pair shares a color
+	def check_interaction_coloring(self):
+		colors = self.interaction_colors()
+		for i in self.sites:
+			for j in self.partners[i]:
+				if colors[i] == colors[j]:
+					raise ValueError(f"Sites {i} and {j} share color {colors[i]}.")
+
+		return True
 
 	### This method returns a mask for computing the neel order of a set of spins 
 	def neel_mask(self):

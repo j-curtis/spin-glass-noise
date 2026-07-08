@@ -36,7 +36,7 @@ def calc_energy(spins,J_matrix):
 
 
 ### Low memory dynamics for generic lattice object passed 
-def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None):
+def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None,use_color_updates=False):
 	### Recast single float as an array of length 1 for technical
 	if not isinstance(temperature_schedule,np.ndarray): temperature_schedule = np.atleast_1d(np.asarray(temperature_schedule,dtype=float))
 	if not isinstance(distances,np.ndarray): distances = np.atleast_1d(np.asarray(distances,dtype=float))
@@ -113,6 +113,21 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 	def order_parameter(spins,mask):
 		return np.mean(np.asarray(spins,dtype=float)*mask)
 
+	color_classes = None
+	neighbor_matrix = None
+	coupling_matrix = None
+	if use_color_updates:
+		lattice.check_interaction_coloring()
+		color_classes = lattice.interaction_color_classes()
+		max_neighbors = max(len(partners) for partners in lattice.partners)
+		neighbor_matrix = np.zeros((nspins,max_neighbors),dtype=int)
+		coupling_matrix = np.zeros((nspins,max_neighbors),dtype=float)
+
+		for site in lattice.sites:
+			partners = np.asarray(lattice.partners[site],dtype=int)
+			neighbor_matrix[site,:len(partners)] = partners
+			coupling_matrix[site,:len(partners)] = lattice.J_matrix[partners,site]
+
 	### Implements a single step which there are then Lx x Ly of in a sweep
 	### Modified to only in-place flip
 	def MCstep(spins):
@@ -132,6 +147,28 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 		if rng.uniform() < p_flip:
 			spins[r] *= -1
 			return dE
+
+		return 0.0
+
+	### Implements simultaneous updates over an independent color class
+	def MCcolorstep(spins,sites):
+		if len(sites) == 0:
+			return 0.0
+
+		fields = np.sum(coupling_matrix[sites] * spins[neighbor_matrix[sites]],axis=1)
+		dE = -2.0 * fields * spins[sites]
+		betadE = dE / T
+
+		p_flip = np.empty_like(betadE,dtype=float)
+		positive = betadE >= 0
+		p_flip[positive] = np.exp(-betadE[positive])/(1.0 + np.exp(-betadE[positive]))
+		p_flip[~positive] = 1.0/(1.0 + np.exp(betadE[~positive]))
+
+		flips = rng.uniform(size=len(sites)) < p_flip
+		if np.any(flips):
+			flip_sites = sites[flips]
+			spins[flip_sites] *= -1
+			return np.sum(dE[flips])
 
 		return 0.0
 	
@@ -161,15 +198,18 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 		noises[n,:,0] = local_noise_field(spins)
 		
 		for i in range(1,nsweeps):
-		
-			energy_change = 0. 
-			
-			### Run a sweep over all spins 
-			for j in range(nspins):
-				dE = MCstep(spins) 
-				energy_change += dE
 
-				
+			energy_change = 0.
+
+			### Run a sweep over all spins
+			if use_color_updates:
+				for color in rng.permutation(len(color_classes)):
+					energy_change += MCcolorstep(spins,color_classes[color])
+			else:
+				for j in range(nspins):
+					dE = MCstep(spins)
+					energy_change += dE
+
 			### Update the energy 
 			energies[n,i] = energies[n,i-1] + energy_change
 			
@@ -207,7 +247,7 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 ### Saves a compact output and is low memory usage during operation 
 ### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
 
-def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None):
+def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None,use_color_updates=False):
 	L = int(L)
 	J_seed = int(J_seed)
 
@@ -226,6 +266,7 @@ def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initi
 		initial_seed=initial_seed,
 		dynamics_seed=dynamics_seed,
 		snapshot_sweeps=snapshot_sweeps,
+		use_color_updates=use_color_updates,
 	)
 		
 	### Due to large memory of spin configurations we will now compute derived observables to save 
