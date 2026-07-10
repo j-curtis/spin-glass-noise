@@ -49,6 +49,8 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 	ndists = len(distances)
 
 	nspins = lattice.N
+	
+	### Block to determine when (if ever) to take snapshots of spin configurations to return 
 	snapshots = None
 	snapshot_indices = {}
 	if snapshot_sweeps is not None:
@@ -113,6 +115,7 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 	def order_parameter(spins,mask):
 		return np.mean(np.asarray(spins,dtype=float)*mask)
 
+	### Block to implement (if turned on) color cluster updates 
 	color_classes = None
 	neighbor_matrix = None
 	coupling_matrix = None
@@ -203,8 +206,9 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 
 			### Run a sweep over all spins
 			if use_color_updates:
-				for color in rng.permutation(len(color_classes)):
-					energy_change += MCcolorstep(spins,color_classes[color])
+				for color in rng.permutation(len(color_classes)): ### !!! Codex check this picks a fixed rng permutation of the color classes per sweep and then iterates through it, not randomizing ever step of the color loop 
+					dE = MCcolorstep(spins,color_classes[color])
+					energy_change += dE ### !!! To match the implementation used in the single site sweep method 
 			else:
 				for j in range(nspins):
 					dE = MCstep(spins)
@@ -229,6 +233,8 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 
 			### Log the local magnetic fields 
 			noises[n,:,i] = local_noise_field(spins) 
+			
+			### If snapshots are desired this loop will capture them 
 			if i in snapshot_indices:
 				snapshots[n,snapshot_indices[i],:] = spins
 			

@@ -818,13 +818,13 @@ def process_nnn_jobs(timestamp,get_replicas=None):
                 if extract_stripes: stripes.append(np.stack(stripes_tmp))
                 qeas.append(np.stack(qeas_tmp))
                 noises.append(np.stack(noises_tmp))
-                if extract_snapshots: snapshots.append(snapshots_tmp)
+                if extract_snapshots: snapshots.append(np.stack(snapshots_tmp)) ### !!! Codex the snapshots should also have been stacked as an array across replicas here 
     
     if extract_snapshots:
         return params, lattices, energies, mags, neels, stripes, qeas, noises, snapshots
 
     if extract_stripes:
-        return params, lattices, energies, mags, neels, stripes, qeas, noises
+        return params, lattices, energies, mags, neels, stripes, qeas, noises ### !!! Codex under what conditions would this return path ever be taken? It should be never I think... in which case we should cut this 
 
     return params, lattices, energies, mags, neels, qeas, noises
 
