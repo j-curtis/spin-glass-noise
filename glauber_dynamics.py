@@ -206,9 +206,9 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 
 			### Run a sweep over all spins
 			if use_color_updates:
-				for color in rng.permutation(len(color_classes)): ### !!! Codex check this picks a fixed rng permutation of the color classes per sweep and then iterates through it, not randomizing ever step of the color loop 
+				for color in rng.permutation(len(color_classes)):
 					dE = MCcolorstep(spins,color_classes[color])
-					energy_change += dE ### !!! To match the implementation used in the single site sweep method 
+					energy_change += dE
 			else:
 				for j in range(nspins):
 					dE = MCstep(spins)

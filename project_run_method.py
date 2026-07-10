@@ -697,8 +697,7 @@ def process_nnn_jobs(timestamp,get_replicas=None):
     params = {}
 
     ### Get all the different seeds and replicas for each job with a particular seed and replica 
-    extract_stripes = False
-    extract_snapshots = False
+    extract_new_format = False
     for job in range(job_no):
         inputs,data = io.get_results(timestamp=timestamp,run_index=job)
         if len(data) == 6:
@@ -707,8 +706,7 @@ def process_nnn_jobs(timestamp,get_replicas=None):
             snapshots = None
         elif len(data) == 8:
             latt, energy, mag, neel, stripes, qea, noise, snapshots = data
-            extract_stripes = True
-            extract_snapshots = True
+            extract_new_format = True
         else:
             raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
         job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }
@@ -807,27 +805,23 @@ def process_nnn_jobs(timestamp,get_replicas=None):
                     energies_tmp.append(jobs_data[job]['energy'])
                     mags_tmp.append(jobs_data[job]['mag'])
                     neels_tmp.append(jobs_data[job]['neel'])
-                    if extract_stripes: stripes_tmp.append(jobs_data[job]['stripes'])
+                    if extract_new_format: stripes_tmp.append(jobs_data[job]['stripes'])
                     qeas_tmp.append(jobs_data[job]['qea'])
                     noises_tmp.append(jobs_data[job]['noise'])
-                    if extract_snapshots: snapshots_tmp.append(jobs_data[job]['snapshots'])
+                    if extract_new_format: snapshots_tmp.append(jobs_data[job]['snapshots'])
 
                 energies.append(np.stack(energies_tmp))
                 mags.append(np.stack(mags_tmp))
                 neels.append(np.stack(neels_tmp))
-                if extract_stripes: stripes.append(np.stack(stripes_tmp))
+                if extract_new_format: stripes.append(np.stack(stripes_tmp))
                 qeas.append(np.stack(qeas_tmp))
                 noises.append(np.stack(noises_tmp))
-                if extract_snapshots: snapshots.append(np.stack(snapshots_tmp)) ### !!! Codex the snapshots should also have been stacked as an array across replicas here 
+                if extract_new_format: snapshots.append(np.stack(snapshots_tmp))
     
-    if extract_snapshots:
+    if extract_new_format:
         return params, lattices, energies, mags, neels, stripes, qeas, noises, snapshots
 
-    if extract_stripes:
-        return params, lattices, energies, mags, neels, stripes, qeas, noises ### !!! Codex under what conditions would this return path ever be taken? It should be never I think... in which case we should cut this 
-
     return params, lattices, energies, mags, neels, qeas, noises
-
 
 
 
