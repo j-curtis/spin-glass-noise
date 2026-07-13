@@ -48,11 +48,11 @@ class dynamics:
 		### Temperature
 		self.temp = float(temp)
 
-		### Optional distances for computing local magnetic field traces
+		### Optional distances for computing local field traces
 		self.distances = None if distances is None else np.atleast_1d(np.asarray(distances,dtype=float))
-		self._magnetic_field_kernel = None
+		self._local_field_kernel = None
 		if self.distances is not None:
-			self._magnetic_field_kernel = self.latt.magnetic_field_mask_tensor(self.distances)
+			self._local_field_kernel = self.latt.magnetic_field_mask_tensor(self.distances)
 
 		### Number of stored time points. The initial state is sample 0.
 		self.nsteps = int(nsteps)
@@ -220,6 +220,8 @@ class dynamics:
 		if spins is None:
 			spins = self.spins
 
+		### TODO: Check exchange sign convention before using this dynamics quantitatively
+		### Glauber positive J currently corresponds to antiferromagnetic coupling
 		### Reuse the sparse exchange field so energy has the same scaling as dynamics
 		exchange = -0.5 * np.sum(spins * self._exchange_field(spins))
 		anisotropy = self.anisotropy * np.sum(spins[2, :]**2)
@@ -239,16 +241,26 @@ class dynamics:
 		mask = self.latt.neel_mask()
 		return np.mean(spins * mask[None, :], axis=1)
 
-	def magnetic_field(self, spins=None):
-		### Local magnetic field from the lattice-provided dipolar tensor
-		if self._magnetic_field_kernel is None:
+	def stripe_order(self, spins=None):
+		### Stripe magnetization vectors along X and Y stripe masks
+		if spins is None:
+			spins = self.spins
+
+		stripe_x_mask, stripe_y_mask = self.latt.stripe_masks()
+		stripe_x = np.mean(spins * stripe_x_mask[None, :], axis=1)
+		stripe_y = np.mean(spins * stripe_y_mask[None, :], axis=1)
+		return np.stack([stripe_x, stripe_y])
+
+	def local_field(self, spins=None):
+		### Local field from the lattice-provided dipolar tensor
+		if self._local_field_kernel is None:
 			return None
 		if spins is None:
 			spins = self.spins
 
-		return np.einsum("abnd,bn->ad", self._magnetic_field_kernel, spins)
+		return np.einsum("abnd,bn->ad", self._local_field_kernel, spins)
 
-	def run(self, initial_spins=None, initial_angles=None, save_trajectory=False):
+	def run(self, initial_spins=None, initial_angles=None, snapshot_steps=None):
 		### Run fixed-temperature dynamics and sample every timestep from t=0
 		if initial_spins is not None and initial_angles is not None:
 			raise ValueError("Pass initial_spins or initial_angles, not both.")
@@ -257,14 +269,24 @@ class dynamics:
 		elif initial_angles is not None:
 			self.set_angles(initial_angles)
 
-		angle_samples = np.zeros((self.nsteps, *self.angle_shape)) if save_trajectory else None
-		spin_samples = np.zeros((self.nsteps, *self.spins_shape)) if save_trajectory else None
 		energies = np.zeros(self.nsteps)
 		magnetizations = np.zeros((self.nsteps, 3))
 		neels = np.zeros((self.nsteps, 3))
-		magnetic_fields = None
+		stripes = np.zeros((2,self.nsteps,3))
+		local_field = None
 		if self.distances is not None:
-			magnetic_fields = np.zeros((self.nsteps, 3, len(self.distances)))
+			local_field = np.zeros((3, len(self.distances), self.nsteps))
+		snapshots = None
+		snapshot_indices = {}
+		if snapshot_steps is not None:
+			snapshot_steps = np.atleast_1d(np.asarray(snapshot_steps,dtype=int))
+			if len(snapshot_steps) > 0:
+				if np.any(snapshot_steps < 0) or np.any(snapshot_steps >= self.nsteps):
+					raise ValueError("snapshot_steps must be between 0 and nsteps - 1.")
+				if len(np.unique(snapshot_steps)) != len(snapshot_steps):
+					raise ValueError("snapshot_steps cannot contain duplicate step indices.")
+				snapshots = np.zeros((len(snapshot_steps),*self.spins_shape))
+			snapshot_indices = {int(step): idx for idx, step in enumerate(snapshot_steps)}
 		frozen_moment = np.zeros(self.spins_shape)
 
 		for i in range(self.nsteps):
@@ -272,23 +294,20 @@ class dynamics:
 				self.step()
 
 			spins = self.spins
-			if save_trajectory:
-				angle_samples[i, ...] = self.angles
-				spin_samples[i, ...] = spins
 			energies[i] = self.energy(spins)
 			magnetizations[i, :] = self.magnetization(spins)
 			neels[i, :] = self.neel_order(spins)
-			if magnetic_fields is not None:
-				magnetic_fields[i, ...] = self.magnetic_field(spins)
+			stripes[:,i,:] = self.stripe_order(spins)
+			if local_field is not None:
+				local_field[...,i] = self.local_field(spins)
+			if i in snapshot_indices:
+				snapshots[snapshot_indices[i],...] = spins
 			frozen_moment += spins
 
 		frozen_moment /= float(self.nsteps)
 		q_ea = np.mean(np.sum(frozen_moment**2, axis=0))
 
-		if save_trajectory:
-			return energies, magnetizations, neels, q_ea, magnetic_fields, angle_samples, spin_samples
-
-		return energies, magnetizations, neels, q_ea, magnetic_fields
+		return energies, magnetizations, neels, stripes, q_ea, local_field, snapshots
 
 
 def anneal_dynamics_lattice(
@@ -301,7 +320,7 @@ def anneal_dynamics_lattice(
 	distances=None,
 	initial_seed=None,
 	dynamics_seed=None,
-	save_trajectory=False,
+	snapshot_steps=None,
 ):
 	"""
 	Low-memory convenience wrapper mirroring glauber_dynamics.anneal_dynamics_lattice.
@@ -313,15 +332,24 @@ def anneal_dynamics_lattice(
 	nT = len(temperature_schedule)
 	nsteps = int(nsteps)
 	distances = None if distances is None else np.atleast_1d(np.asarray(distances,dtype=float))
+	snapshot_steps = None if snapshot_steps is None else np.atleast_1d(np.asarray(snapshot_steps,dtype=int))
+	if snapshot_steps is not None:
+		if len(snapshot_steps) > 0:
+			if np.any(snapshot_steps < 0) or np.any(snapshot_steps >= nsteps):
+				raise ValueError("snapshot_steps must be between 0 and nsteps - 1.")
+			if len(np.unique(snapshot_steps)) != len(snapshot_steps):
+				raise ValueError("snapshot_steps cannot contain duplicate step indices.")
 
-	angle_samples = np.zeros((nT, nsteps, 2, lattice.N)) if save_trajectory else None
-	spin_samples = np.zeros((nT, nsteps, 3, lattice.N)) if save_trajectory else None
 	energies = np.zeros((nT, nsteps))
 	magnetization = np.zeros((nT, nsteps, 3))
 	neel = np.zeros((nT, nsteps, 3))
-	magnetic_fields = None
+	stripes = np.zeros((2,nT,nsteps,3))
+	local_field = None
 	if distances is not None:
-		magnetic_fields = np.zeros((nT, nsteps, 3, len(distances)))
+		local_field = np.zeros((nT, 3, len(distances), nsteps))
+	snapshots = None
+	if snapshot_steps is not None and len(snapshot_steps) > 0:
+		snapshots = np.zeros((nT,len(snapshot_steps),3,lattice.N))
 	qea = np.zeros(nT)
 
 	previous_angles = None 
@@ -351,27 +379,23 @@ def anneal_dynamics_lattice(
 			sim.set_rng(dynamics_rng, seed=dynamics_seed)
 
 
-		if save_trajectory:
-			run_energies, run_mags, run_neel, run_qea, run_fields, run_angles, run_spins = sim.run(save_trajectory=True)
-			angle_samples[n, ...] = run_angles
-			spin_samples[n, ...] = run_spins
-
-		else:
-			run_energies, run_mags, run_neel, run_qea, run_fields = sim.run()
+		run_energies, run_mags, run_neel, run_stripes, run_qea, run_local_field, run_snapshots = sim.run(
+			snapshot_steps=snapshot_steps,
+		)
 
 		previous_angles = sim.angles
 
 		energies[n, :] = run_energies
 		magnetization[n, :, :] = run_mags
 		neel[n, :, :] = run_neel
-		if magnetic_fields is not None:
-			magnetic_fields[n, ...] = run_fields
+		stripes[:,n,:,:] = run_stripes
+		if local_field is not None:
+			local_field[n, ...] = run_local_field
+		if snapshots is not None:
+			snapshots[n, ...] = run_snapshots
 		qea[n] = run_qea
 
-	if save_trajectory:
-		return energies, magnetization, neel, qea, magnetic_fields, angle_samples, spin_samples
-
-	return energies, magnetization, neel, qea, magnetic_fields
+	return energies, magnetization, neel, stripes, qea, local_field, snapshots
 
 
 ### Saves a compact output and is low memory usage during operation
@@ -391,7 +415,7 @@ def run_sims(
 	dt=1.0e-3,
 	initial_seed=None,
 	dynamics_seed=None,
-	save_trajectory=False,
+	snapshot_sweeps=None,
 ):
 	L = int(L)
 	J_seed = int(J_seed)
@@ -414,14 +438,10 @@ def run_sims(
 		distances=distances,
 		initial_seed=initial_seed,
 		dynamics_seed=dynamics_seed,
-		save_trajectory=save_trajectory,
+		snapshot_steps=snapshot_sweeps,
 	)
 
-	### By default save only compact observables, not full spin/angle trajectories
+	### Save only compact observables and optional requested snapshots
 	with open(save_filename, 'wb') as out_file:
-		if save_trajectory:
-			energies, magnetization, neel, qea, magnetic_fields, angle_samples, spin_samples = results
-			pickle.dump((latt, energies, magnetization, neel, qea, magnetic_fields, angle_samples, spin_samples), out_file)
-		else:
-			energies, magnetization, neel, qea, magnetic_fields = results
-			pickle.dump((latt, energies, magnetization, neel, qea, magnetic_fields), out_file)
+		energies, magnetization, neel, stripes, qea, local_field, snapshots = results
+		pickle.dump((latt, energies, magnetization, neel, stripes, qea, local_field, snapshots), out_file)

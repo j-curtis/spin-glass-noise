@@ -196,6 +196,13 @@ class lattice:
 
 		return (-1.*np.ones(self.N,dtype=int))**neel_mask
 
+	### This method returns masks for computing stripe order along X and Y
+	def stripe_masks(self):
+		stripe_x_mask = np.where((self.X.astype(int) % 2) == 0, 1., -1.)
+		stripe_y_mask = np.where((self.Y.astype(int) % 2) == 0, 1., -1.)
+
+		return stripe_x_mask, stripe_y_mask
+
 	### This method returns a magnetostatic mask for computing spins -> local magnetic field pipeline 
 	### Gives zz component of full tensor, relevant for Ising z-spins
 	def magnetic_field_mask_zz(self,distances):
