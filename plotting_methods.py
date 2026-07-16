@@ -31,6 +31,12 @@ def dist_colors(dists):
 	
 	return dist_clrs
 
+
+def time_colors(times):
+	### Returns a color scale illustrating the passage of time 
+	return cm.Purples(np.linspace(0.2,1.,len(times)))
+
+
 def plot_schedule_no_neel(energy, mag, temps,area,replicas = [0],mag_window = 100):
 	### Generates plots of energy and magnetization across the annealing schedule 
 	### Also generates a plot of energy vs temperature and magnetic susceptibility vs. temperature 

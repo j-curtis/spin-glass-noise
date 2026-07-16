@@ -367,5 +367,36 @@ def process_cumulants(noise,sample_size=0):
 
 	return times, Gamma2, Gamma4, Gamma2_fit, Gamma4_fit 
 	
+### Given lattice parameters determines the mean and variance of Jnnn 
+def Jnnn_stats(latt):
+	pnnn = latt['pnnn']
+	Jnnn = latt['Jnnn']
+
+	Jnnn_avg = pnnn*Jnnn
+	Jnnn_std = np.sqrt(pnnn*(1.-pnnn))*Jnnn
+
+	return Jnnn_avg,Jnnn_std
+
+
+### Computes lattice nnn distributions averaged over different seeds
+def latt_nnn_dist(lattices):
+	nnn_num_dist = [] 
+
+	for i in range(len(lattices)):
+		latt = lattices[i]['latt']
+
+		J_matrix = latt.J_matrix
+		nnn_matrix = J_matrix.copy()
+			
+		for site in latt.sites:
+			nnn_num = 0
+			for nnn in latt.nnns[site]:
+				nnn_num += (J_matrix[site,nnn]>0)
+                
+			nnn_num_dist.append(nnn_num)
+
+	return nnn_num_dist
+    
+	
 	
 
