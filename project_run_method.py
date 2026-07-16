@@ -680,7 +680,8 @@ def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
 	
 ### Extraction for new job sets which have multiple different Jnnn sweeps in one job set 
 ### If get_replicas is not None, we will only extract the set of replicas passed in the list, to save on memory pressure 
-def process_nnn_jobs(timestamp,get_replicas=None): 
+### If sample_step is not None but an integer this will down-sample all observables to help save on memory pressure 
+def process_nnn_jobs(timestamp,get_replicas=None,sample_step=None): 
     print(f"Recovering observables from annealing calculation, timestamp {timestamp}.")
     ### First lets extract all of the different J matrices 
     job_no = io.recover_job_no(timestamp = timestamp)
@@ -702,11 +703,28 @@ def process_nnn_jobs(timestamp,get_replicas=None):
         inputs,data = io.get_results(timestamp=timestamp,run_index=job)
         if len(data) == 6:
             latt, energy, mag, neel, qea, noise = data
+
+            ### Here we downsample noise and other observables 
+            if sample_step is not None:
+            	energy = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
+            	mag = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
+            	neel = nm.down_sample(neel,chop_size=0,sample_size = sample_step)
+            	noise = nm.down_sample(noise,chop_size=0,sample_size = sample_step)
+            	
             stripes = None
             snapshots = None
         elif len(data) == 8:
             latt, energy, mag, neel, stripes, qea, noise, snapshots = data
             extract_new_format = True
+            
+            ### Here we downsample noise and other observables 
+            if sample_step is not None:
+            	energy = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
+            	mag = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
+            	neel = nm.down_sample(neel,chop_size=0,sample_size = sample_step)
+            	stripes = nm.down_sample(stripes,chop_size=0,sample_size = sample_step) 
+            	noise = nm.down_sample(noise,chop_size=0,sample_size = sample_step)
+            
         else:
             raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
         job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }

@@ -54,10 +54,13 @@ def calc_echo_phase(noise,times):
 
     
 ### Computes the linear spectrum averaged over replica 
-def calc_gaussian_spectrum(noise,chop_size):
+### Optionally subtracts time-average first 
+def calc_gaussian_spectrum(noise,chop_size,center=False):
 	### Returns the FFT of the noise and the frequencies after chopping some initial transient response 
 	
 	data = noise[...,chop_size:] 
+	
+	if center: data = data - np.mean(data,axis=-1,keepdims=True)
 	
 	fft_data = np.fft.rfft(data,axis=-1)
 	
@@ -197,6 +200,172 @@ def echo_times(noise_sampled,sample_times):
 	delays = np.arange(ndelays)
 	
 	return delays*sample_times 
+	
+	
+	
+	
+### This method computes the thermodynamics of a data set 
+### The data is assumed to correspond to one set of lattice parameters but potentially multiple seeds (disorder realizations)
+### We therefore process first the data for each disorder and then average last over seed
+### The data is assumed to be a shape of the form 
+### list[ energies[replica, temp, time] ] where the list runs over each lattice seed 
+def thermodynamics(energies,temps,area = 1.,chop_size=0):
+	nseeds = len(energies) 
+	nreplicas, nTs, nsweeps = energies[0].shape 
+	
+	### Energy vs. T 
+	E_by_lattice = np.zeros((nseeds,nTs)) 
+	cV_std_by_lattice = np.zeros((nseeds,nTs))
+	cV_eq_by_lattice = np.zeros_like(cV_std_by_lattice)
+	
+	if chop_size<=0: chop_size = int(nsweeps//3)
+	
+	for i in range(nseeds):
+		
+		E_by_lattice[i,:] = np.mean(energies[i][:,:,-1],axis=0)/area
+		cV_std_by_lattice[i,:] = np.std(energies[i][:,:,chop_size:],axis=(0,-1))**2/(area*temps**2)
+
+	for i in range(nseeds):
+		cV_eq_by_lattice[i,:] = np.gradient(E_by_lattice[i,:],temps) 
+		
+	E_vs_T = np.mean(E_by_lattice,axis=0) 
+	cV_std = np.mean(cV_std_by_lattice,axis=0)
+	cV_eq = np.mean(cV_eq_by_lattice,axis=0) 
+	
+	
+	return E_vs_T,cV_std,cV_eq
+	
+	
+### This method computes the various order parameters of the data set 
+### The data is assumed to correspond to one set of lattice parameters but potentially multiple seeds (disorder realizations)
+### We therefore process first the data for each disorder and then average last over seed
+### The data is assumed to be a shape of the form 
+### list[ OP[dof, replica, temp, time] ] where the list runs over each lattice seed and dof is either trivial (for magnetization and Neel) or is the component of stripe order (0,1) for the stripe orders
+### All OPs are Z2 and this returns the average of the modulus of the OP over replica and disorder 
+def order_parameters(mags,neels,stripes,chop_size=0):
+	 
+	nseeds = len(mags) 
+	nreplicas, nTs, nsweeps = mags[0].shape 
+	
+	### Magnetization
+	M_by_lattice = np.zeros((nseeds,nTs))
+	N_by_lattice = np.zeros((nseeds,nTs))
+	Sx_by_lattice = np.zeros((nseeds,nTs))
+	Sy_by_lattice = np.zeros((nseeds,nTs)) 
+	
+	if chop_size<=0: chop_size = int(nsweeps//3)
+	
+	for i in range(nseeds):
+		
+		M_by_lattice[i,:] = np.mean(np.abs(mags[i][:,:,-1]),axis=0)
+		N_by_lattice[i,:] = np.mean(np.abs(neels[i][:,:,-1]),axis=0)
+		Sx_by_lattice[i,:] = np.mean(np.abs(stripes[i][0,:,:,-1]),axis=0)
+		Sy_by_lattice[i,:] = np.mean(np.abs(stripes[i][1,:,:,-1]),axis=0)
+
+		
+	M = np.mean(M_by_lattice,axis=0) 
+	N = np.mean(N_by_lattice,axis=0)
+	S = np.mean(Sx_by_lattice + Sy_by_lattice,axis=0) 
+	
+	
+	return M,N,S
+	
+	
+### This method computes the Gaussian noise spectrum for the data set 
+### The data is assumed to correspond to one set of lattice parameters but potentially multiple seeds (disorder realizations)
+### We therefore process first the data for each disorder and then average last over seed
+### The data is assumed to be a shape of the form 
+### list[ noise[..., time] ] where the list runs over each lattice seed
+### By default it uses the centered spectrum which subtracts the time-average at omega = 0 
+def calc_noise_spectrum(noise,chop_size=0,center=True):
+	nseeds = len(noise)
+	
+	noise_shape = noise[0].shape 
+	nsweeps = noise_shape[-1]
+	
+	noise_by_lattice = []
+	
+	
+	if chop_size<=0: chop_size = int(1e3)
+	
+	for i in range(nseeds):
+		ws,noise_out = calc_gaussian_spectrum(noise[i],chop_size,center=center)
+		noise_by_lattice.append(noise_out)
+		
+	noise_by_lattice = np.stack(noise_by_lattice,axis=0) 
+	spectrum = np.mean(noise_by_lattice,axis=0) 
+	
+	return ws,spectrum
+	
+	
+### Processes the cumulants and then averages over the lattice disorder realizations 
+### Assumed data of the form 
+### list[noises[....,time] ] where list runs over each lattice seed 
+### Returns the desired (2,2) fourth cumulant and a fitted time dependence after disorder averaging and the down-sampled echo times 
+### Noise is down-sampled by the specified amount which defaults to zero (very costly) 
+def process_cumulants(noise,sample_size=0):
+	nseeds = len(noise)
+	
+	Gamma2_by_lattice = [] 
+	Gamma4_by_lattice = [] 
+	echo_times = None 
+	
+	for i in range(nseeds):
+	
+		### Sample the data down for cumulant calculations
+		noise_sampled = down_sample(noise[i],noise[i].shape[-1]//5,sample_size)
+		cumulants = extract_cumulants_Hahn(noise_sampled)
+		echo_times = echo_times(noise_sampled,sample_size)
+
+		Gamma2_by_lattice.append(cumulants[2,...])
+		Gamma4_by_lattice.append(cumulants[11,...])
+		
+	### Now we restack and average over disorder 
+	Gamma2 = np.mean(np.stack(Gamam2_by_lattice,axis=0),axis=0)
+	Gamma4 = np.mean(np.stack(Gamma4_by_lattice,axis=0),axis=0)
+	
+	### Now we fit the data
+		
+	### Fitting to a single power law
+	def fit_cumulant(t,y):
+	    
+		y_log = np.log(y)
+		t_log = np.log(t) 
+
+		fit = stats.linregress(t_log,y_log) 
+
+		return np.exp(fit.intercept +fit.slope*t_log), fit.intercept, fit.slope, fit.rvalue
+
+
+	### Perform fits 
+	fitted_data_Gamma2 = np.zeros_like(Gamma2)
+	fitted_data_Gamma4 = np.zeros_like(Gamma4)
+
+	intercepts_Gamma2 = np.zeros_like(Gamma2[...,0])
+	intercepts_Gamma4 = np.zeros_like(Gamma4[...,0])
+
+	slopes_Gamma2 = np.zeros_like(Gamma2[...,0])
+	slopes_Gamma4 = np.zeros_like(Gamma4[...,0])
+
+	r_vals_Gamma4 = np.zeros_like(Gamma2[...,0])
+	r_vals_Gamma4 = np.zeros_like(Gamma4[...,0])
+
+	### Infer shape of z and temperature indices 
+	ndists, ntemps, _ = Gamma2.shape 
+
+	for i in range(ndists):
+		for j in range(ntemps):
+			fitted_data_Gamma2[j,i,:],intercepts_Gamma2[j,i], slopes_Gamma2[j,i], r_vals_Gamma2[j,i] = fit_cumulant(echo_times[1:],Gamma2[...,1:])
+			fitted_data_Gamma4[j,i,:],intercepts_Gamma4[j,i], slopes_Gamma4[j,i], r_vals_Gamma4[j,i] = fit_cumulant(echo_times[1:],-Gamma4[...,1:) ### We expect Gamma4 <0 so we fit the negative value to a power law 
+			fitted_data_Gamma4[j,i,:] *= -1 ### Flip the sign back 
+			intercepts_Gamma4[j,i] *= -1. ### Intercept also flips back 
+
+	### We return the cumulants, the times, and the fit results 
+	Gamma2_fit = {'fitted_data':fitted_data_Gamma2, 'intercepts':intercepts_Gamma2, 'slopes':slopes_Gamma2, 'rval':r_vals_Gamma2}
+	Gamma4_fit = {'fitted_data':fitted_data_Gamma4, 'intercepts':intercepts_Gamma4, 'slopes':slopes_Gamma4, 'rval':r_vals_Gamma4}
+
+
+	return echo_times, Gamma2, Gamma4, Gamma2_fit, Gamma4_fit 
 	
 	
 

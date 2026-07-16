@@ -461,7 +461,7 @@ def plot_schedule(energy, mag, neel, temps, area,replicas = [0],mag_window = 100
 		return plot_schedule_neel(energy, mag, neel, temps,area,replicas,mag_window)
 
 
-def run_annealing_plot_suite(timestamps,sample_size,z_indxs,temp_indxs,plotting_time_step,save_figs=False,window=100):
+def run_plot_suite_nnn(timestamps,sample_size,z_indxs,temp_indxs,plotting_time_step,save_figs=False,window=100):
 	### Load data sets 
 	print("Loading data sets")
 	energy_list = [] 
@@ -525,4 +525,7 @@ def run_annealing_plot_suite(timestamps,sample_size,z_indxs,temp_indxs,plotting_
 
 
 	
+	
+	
+
 	
