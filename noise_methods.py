@@ -2,7 +2,7 @@
 ### 12/09/25
 
 import numpy as np
-import glauber
+from scipy import stats
 
 
 cumulants_ref = [ 'X','Y','XX','XY','YY','XXX','XXY','XYY','YYY','XXXX','XXXY','XXYY','XYYY','YYYY']
@@ -308,20 +308,20 @@ def process_cumulants(noise,sample_size=0):
 	
 	Gamma2_by_lattice = [] 
 	Gamma4_by_lattice = [] 
-	echo_times = None 
+	times = None 
 	
 	for i in range(nseeds):
 	
 		### Sample the data down for cumulant calculations
 		noise_sampled = down_sample(noise[i],noise[i].shape[-1]//5,sample_size)
 		cumulants = extract_cumulants_Hahn(noise_sampled)
-		echo_times = echo_times(noise_sampled,sample_size)
+		times = echo_times(noise_sampled,sample_size)
 
 		Gamma2_by_lattice.append(cumulants[2,...])
 		Gamma4_by_lattice.append(cumulants[11,...])
 		
 	### Now we restack and average over disorder 
-	Gamma2 = np.mean(np.stack(Gamam2_by_lattice,axis=0),axis=0)
+	Gamma2 = np.mean(np.stack(Gamma2_by_lattice,axis=0),axis=0)
 	Gamma4 = np.mean(np.stack(Gamma4_by_lattice,axis=0),axis=0)
 	
 	### Now we fit the data
@@ -338,8 +338,8 @@ def process_cumulants(noise,sample_size=0):
 
 
 	### Perform fits 
-	fitted_data_Gamma2 = np.zeros_like(Gamma2)
-	fitted_data_Gamma4 = np.zeros_like(Gamma4)
+	fitted_data_Gamma2 = np.zeros_like(Gamma2[...,1:])
+	fitted_data_Gamma4 = np.zeros_like(Gamma4[...,1:])
 
 	intercepts_Gamma2 = np.zeros_like(Gamma2[...,0])
 	intercepts_Gamma4 = np.zeros_like(Gamma4[...,0])
@@ -347,16 +347,16 @@ def process_cumulants(noise,sample_size=0):
 	slopes_Gamma2 = np.zeros_like(Gamma2[...,0])
 	slopes_Gamma4 = np.zeros_like(Gamma4[...,0])
 
-	r_vals_Gamma4 = np.zeros_like(Gamma2[...,0])
+	r_vals_Gamma2 = np.zeros_like(Gamma2[...,0])
 	r_vals_Gamma4 = np.zeros_like(Gamma4[...,0])
 
 	### Infer shape of z and temperature indices 
-	ndists, ntemps, _ = Gamma2.shape 
+	ntemps, ndists, _ = Gamma2.shape 
 
 	for i in range(ndists):
 		for j in range(ntemps):
-			fitted_data_Gamma2[j,i,:],intercepts_Gamma2[j,i], slopes_Gamma2[j,i], r_vals_Gamma2[j,i] = fit_cumulant(echo_times[1:],Gamma2[...,1:])
-			fitted_data_Gamma4[j,i,:],intercepts_Gamma4[j,i], slopes_Gamma4[j,i], r_vals_Gamma4[j,i] = fit_cumulant(echo_times[1:],-Gamma4[...,1:) ### We expect Gamma4 <0 so we fit the negative value to a power law 
+			fitted_data_Gamma2[j,i,:],intercepts_Gamma2[j,i], slopes_Gamma2[j,i], r_vals_Gamma2[j,i] = fit_cumulant(times[1:],Gamma2[j,i,1:])
+			fitted_data_Gamma4[j,i,:],intercepts_Gamma4[j,i], slopes_Gamma4[j,i], r_vals_Gamma4[j,i] = fit_cumulant(times[1:],-Gamma4[j,i,1:]) ### We expect Gamma4 <0 so we fit the negative value to a power law 
 			fitted_data_Gamma4[j,i,:] *= -1 ### Flip the sign back 
 			intercepts_Gamma4[j,i] *= -1. ### Intercept also flips back 
 
@@ -365,7 +365,7 @@ def process_cumulants(noise,sample_size=0):
 	Gamma4_fit = {'fitted_data':fitted_data_Gamma4, 'intercepts':intercepts_Gamma4, 'slopes':slopes_Gamma4, 'rval':r_vals_Gamma4}
 
 
-	return echo_times, Gamma2, Gamma4, Gamma2_fit, Gamma4_fit 
+	return times, Gamma2, Gamma4, Gamma2_fit, Gamma4_fit 
 	
 	
 
