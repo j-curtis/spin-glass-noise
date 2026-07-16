@@ -708,7 +708,7 @@ def process_nnn_jobs_path(file_path,timestamp,get_replicas=None,sample_step=None
 	for job in range(job_no):
 		inputs,data = fm.file_management_local_backend.read_run_raw_data(file_path+timestamp,run_index=job)
 		if len(data) == 8:
-		    	latt, energy, mag, neel, stripes, qea, noise, snapshots = data
+			latt, energy, mag, neel, stripes, qea, noise, snapshots = data
 			### Here we downsample noise and other observables 
 			if sample_step is not None:
 				energy = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
@@ -716,11 +716,11 @@ def process_nnn_jobs_path(file_path,timestamp,get_replicas=None,sample_step=None
 				neel = nm.down_sample(neel,chop_size=0,sample_size = sample_step)
 				stripes = nm.down_sample(stripes,chop_size=0,sample_size = sample_step) 
 				noise = nm.down_sample(noise,chop_size=0,sample_size = sample_step)
-            
+
 		else:
-		    raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
+			raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
         	
-        	job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }
+		job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }
 
 		Jnnn = inputs['Jnnn']
 		pnnn = inputs['p']
@@ -747,7 +747,7 @@ def process_nnn_jobs_path(file_path,timestamp,get_replicas=None,sample_step=None
 		if Jnnn not in jobs_by_Jnnn.keys():
 			jobs_by_Jnnn[Jnnn] = [ job ]
 
-        	else: 
+		else: 
 			(jobs_by_Jnnn[Jnnn]).append(job)
         
 		if pnnn not in jobs_by_pnnn.keys():
