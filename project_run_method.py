@@ -682,7 +682,7 @@ def load_data_qdem_old(path,timestamp,get_seed=0,get_replicas=None):
 	
 	
 ### This loads a new data set with snapshots from absolute path (used for qdem)  
-def load_data_path(file_path,timestamp,get_replicas=None,sample_step=None):
+def process_nnn_jobs_path(file_path,timestamp,get_replicas=None,sample_step=None):
 
 	### First we point demler_tools to the file location 
 	from demler_tools import file_manager as fm
