@@ -585,7 +585,7 @@ def process_anneal_memory_safe(timestamp,sample_step=100,get_seed=0):
 
 
 ### This method loads big data sets from qdem 
-def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
+def load_data_qdem_old(path,timestamp,get_seed=0,get_replicas=None):
 	from demler_tools import file_manager as fm
 
 	### First we point demler_tools to the file location 
@@ -677,6 +677,167 @@ def load_data_qdem(path,timestamp,get_seed=0,get_replicas=None):
 	else:
 		return (Lx,Ly),temps,distances,energy,magnetization,None,q_ea,noise
     	
+	
+	
+	
+	
+### This loads a new data set with snapshots from absolute path (used for qdem)  
+def load_data_path(file_path,timestamp,get_replicas=None,sample_step=None):
+
+	### First we point demler_tools to the file location 
+	from demler_tools import file_manager as fm
+	
+	job_no = fm.file_management_local_backend.read_folder_job_no(file_path+timestamp)
+	
+	print(f"Recovering jobs from {timestamp} located at {file_path}")
+	print(f"Total jobs: {job_no}")
+
+	replicas_by_job = {}
+	jobs_data = {}
+	jobs_by_Jnnn = {}  
+	jobs_by_pnnn = {} 
+	jobs_by_seed = {} 
+	jobs_by_replica = {}
+
+	replicas_by_job = {}    
+
+	params = {}
+	### Get all the different seeds and replicas for each job with a particular seed and replica 
+	
+
+	for job in range(job_no):
+		inputs,data = fm.file_management_local_backend.read_run_raw_data(file_path+timestamp,run_index=job)
+		if len(data) == 8:
+		    	latt, energy, mag, neel, stripes, qea, noise, snapshots = data
+			### Here we downsample noise and other observables 
+			if sample_step is not None:
+				energy = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
+				mag = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
+				neel = nm.down_sample(neel,chop_size=0,sample_size = sample_step)
+				stripes = nm.down_sample(stripes,chop_size=0,sample_size = sample_step) 
+				noise = nm.down_sample(noise,chop_size=0,sample_size = sample_step)
+            
+		else:
+		    raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
+        	
+        	job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }
+
+		Jnnn = inputs['Jnnn']
+		pnnn = inputs['p']
+		seed = int(inputs['J_seed'])
+		replica = int(inputs['replica'])
+		
+		if (get_replicas is not None) and not (replica in get_replicas):
+			continue
+        	
+		L = int(inputs['L'])
+		temps = inputs['temps']
+		distances = inputs['distances']
+            
+		if 'L' not in params.keys():
+			params['L'] = L
+		if 'temps' not in params.keys():
+			params['temps'] = temps 
+		if 'distances' not in params.keys():
+			params['distances'] = distances 
+
+		replicas_by_job[job] = replica
+		jobs_data[job] = job_data
+       	
+		if Jnnn not in jobs_by_Jnnn.keys():
+			jobs_by_Jnnn[Jnnn] = [ job ]
+
+        	else: 
+			(jobs_by_Jnnn[Jnnn]).append(job)
+        
+		if pnnn not in jobs_by_pnnn.keys():
+			jobs_by_pnnn[pnnn] = [ job ]
+
+		else: 
+			(jobs_by_pnnn[pnnn]).append(job)
+   
+		if seed not in jobs_by_seed.keys(): 
+			jobs_by_seed[seed] = [ job ]
+
+		else:
+			(jobs_by_seed[seed]).append(job)         
+
+		if replica not in jobs_by_replica.keys():
+			jobs_by_replica[replica] = [ job ] 
+
+		else:
+			(jobs_by_replica[replica]).append(job)
+
+	Jnnn_no = len(jobs_by_Jnnn.keys())
+	pnnn_no = len(jobs_by_pnnn.keys())
+	seed_no = len(jobs_by_seed.keys())
+	latt_no = Jnnn_no*pnnn_no*seed_no 
+	replica_no = len(jobs_by_replica.keys())
+
+	params['Jnnn_no'] = Jnnn_no
+	params['pnnn_no'] = pnnn_no
+	params['seed_no'] = seed_no
+	params['latt_no'] = latt_no
+	params['replica_no'] = replica_no
+
+	print(f"Number of Jnnns: {Jnnn_no}")
+	print(f"Number of pnnns: {pnnn_no}")
+	print(f"Number of seeds: {seed_no}")
+	print(f"Number of lattices: {latt_no}")
+	print(f"Number of replicas: {replica_no}")
+
+	lattices = [] 
+	energies = [] 
+	mags = [] 
+	neels = [] 
+	stripes = []
+	qeas = []
+	noises = [] 
+	snapshots = []
+    
+	for Jnnn in jobs_by_Jnnn.keys():
+		for pnnn in jobs_by_pnnn.keys():
+			for seed in jobs_by_seed.keys():
+				### This now identifies a unique lattice which we can save 
+				job_list=list( set(jobs_by_Jnnn[Jnnn]) & set(jobs_by_pnnn[pnnn]) & set(jobs_by_seed[seed]))
+				latt = jobs_data[job_list[0]]['latt']
+				lattices.append({'Jnnn':Jnnn, 'pnnn':pnnn, 'seed':seed, 'latt':latt})
+
+				### We want to turn each of these jobs into an array stacked over replica 
+				energies_tmp = []
+				mags_tmp = [] 
+				neels_tmp = []
+				stripes_tmp = []
+				qeas_tmp = []
+				noises_tmp = [] 
+				snapshots_tmp = []
+                
+				for job in job_list:
+					energies_tmp.append(jobs_data[job]['energy'])
+					mags_tmp.append(jobs_data[job]['mag'])
+					neels_tmp.append(jobs_data[job]['neel'])
+					stripes_tmp.append(jobs_data[job]['stripes'])
+					qeas_tmp.append(jobs_data[job]['qea'])
+					noises_tmp.append(jobs_data[job]['noise'])
+					snapshots_tmp.append(jobs_data[job]['snapshots'])
+
+				energies.append(np.stack(energies_tmp))
+				mags.append(np.stack(mags_tmp))	
+				neels.append(np.stack(neels_tmp))
+				stripes.append(np.stack(stripes_tmp))
+				qeas.append(np.stack(qeas_tmp))
+				noises.append(np.stack(noises_tmp))
+				snapshots.append(np.stack(snapshots_tmp))
+    
+	return params, lattices, energies, mags, neels, stripes, qeas, noises, snapshots
+
+
+	
+	
+	
+	
+	
+	
 	
 ### Extraction for new job sets which have multiple different Jnnn sweeps in one job set 
 ### If get_replicas is not None, we will only extract the set of replicas passed in the list, to save on memory pressure 
