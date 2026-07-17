@@ -209,7 +209,7 @@ def echo_times(noise_sampled,sample_times):
 ### We therefore process first the data for each disorder and then average last over seed
 ### The data is assumed to be a shape of the form 
 ### list[ energies[replica, temp, time] ] where the list runs over each lattice seed 
-def thermodynamics(energies,temps,area = 1.,chop_size=0):
+def thermodynamics(energies,temps,area = 1.,chop_size=None):
 	nseeds = len(energies) 
 	nreplicas, nTs, nsweeps = energies[0].shape 
 	
@@ -218,7 +218,7 @@ def thermodynamics(energies,temps,area = 1.,chop_size=0):
 	cV_std_by_lattice = np.zeros((nseeds,nTs))
 	cV_eq_by_lattice = np.zeros_like(cV_std_by_lattice)
 	
-	if chop_size<=0: chop_size = int(nsweeps//3)
+	if chop_size is None: chop_size = int(nsweeps//3)
 	
 	for i in range(nseeds):
 		

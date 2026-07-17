@@ -706,7 +706,8 @@ def process_nnn_jobs_path(file_path,timestamp,get_replicas=None,sample_step=None
 	
 
 	for job in range(job_no):
-		inputs,data = fm.file_management_local_backend.read_run_raw_data(file_path+timestamp,run_index=job)
+		#inputs,data = fm.file_management_local_backend.read_run_raw_data(file_path+timestamp,run_index=job)
+		inputs, data = io.get_results(job,timestamp,folder_path=file_path+timestamp)
 		if len(data) == 8:
 			latt, energy, mag, neel, stripes, qea, noise, snapshots = data
 			### Here we downsample noise and other observables 
