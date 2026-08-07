@@ -252,10 +252,27 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 
 ### Saves a compact output and is low memory usage during operation 
 ### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
-
-def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None,use_color_updates=False):
+### Saves a compact output and is low memory usage during operation 
+### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
+### If construct_seeds is used, this will automatically generate the initial and dynamics seeds as well by combining the J seed and replica index used as well as any passed initial_seed/dynamics_seed values 
+def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None,use_color_updates=False,construct_seeds=False):
 	L = int(L)
 	J_seed = int(J_seed)
+	replica = int(replica) 
+	
+	### Generate various seeds 
+	if construct_seeds:
+		initial_seed_pad = J_seed + replica
+		dynamics_seed_pad = J_seed + replica
+	
+	if initial_seed is not None:
+		initial_seed = int(initial_seed)
+		initial_seed += initial_seed_pad
+		
+	if dynamics_seed is not None:
+		dynamics_seed = int(dynamics_seed) 
+		dynamics_seed += dynamics_seed_pad 
+
 
 	latt = lm.lattice(L)
 	latt.set_seed(J_seed)
