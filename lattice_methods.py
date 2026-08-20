@@ -2,6 +2,7 @@
 ### Jonathan Curtis 
 
 import numpy as np 
+from scipy.sparse import lil_matrix ### Use this to encode the coupling matrix J_ij which is actually sparse and otherwise would eat memory 
 
 ### Generates various square lattices 
 class lattice:
@@ -32,7 +33,8 @@ class lattice:
 		### !!! In future should make this list built in the setter methods so that it can be made variable size depending on distance of neighbors included 
 		self.partners = [] 
 		
-		self.J_matrix = np.zeros((self.N,self.N))
+		#self.J_matrix = np.zeros((self.N,self.N)) ### !!! This ends up blowing up the memory very quickly for no good reason and should be removed
+		self.J_matrix = lil_matrix((self.N, self.N),dtype=np.float64) ### A sparse encoding of the couplings to save memory
 		
 		for i in self.sites:
 			r = self.index_to_coordinate(i) 
@@ -135,6 +137,10 @@ class lattice:
 			raise ValueError(f"Coupling matrix is not symmetric: max asymmetry = {max_asymmetry}")
 
 		return True
+		
+	### Once all constructions of the matrix are done we should compress it to a sparse form 
+	def compress_to_csr(self):
+		self.J_matrix = self.J_matrix.tocsr() 
 
 	### Greedy graph coloring of the interaction graph defined by partners
 	def interaction_colors(self,force_recompute=False):
@@ -195,13 +201,6 @@ class lattice:
 		neel_mask = (self.X+self.Y).astype(int)
 
 		return (-1.*np.ones(self.N,dtype=int))**neel_mask
-
-	### This method returns masks for computing stripe order along X and Y
-	def stripe_masks(self):
-		stripe_x_mask = np.where((self.X.astype(int) % 2) == 0, 1., -1.)
-		stripe_y_mask = np.where((self.Y.astype(int) % 2) == 0, 1., -1.)
-
-		return stripe_x_mask, stripe_y_mask
 
 	### This method returns a magnetostatic mask for computing spins -> local magnetic field pipeline 
 	### Gives zz component of full tensor, relevant for Ising z-spins

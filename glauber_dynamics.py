@@ -129,7 +129,7 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 		for site in lattice.sites:
 			partners = np.asarray(lattice.partners[site],dtype=int)
 			neighbor_matrix[site,:len(partners)] = partners
-			coupling_matrix[site,:len(partners)] = lattice.J_matrix[partners,site]
+			coupling_matrix[site,:len(partners)] = (lattice.J_matrix[partners,site]).toarray().ravel() ### Fix type mismatch for sparse array indexing 
 
 	### Implements a single step which there are then Lx x Ly of in a sweep
 	### Modified to only in-place flip
@@ -206,9 +206,9 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 
 			### Run a sweep over all spins
 			if use_color_updates:
-				for color in rng.permutation(len(color_classes)):
+				for color in rng.permutation(len(color_classes)): ### !!! Codex check this picks a fixed rng permutation of the color classes per sweep and then iterates through it, not randomizing ever step of the color loop 
 					dE = MCcolorstep(spins,color_classes[color])
-					energy_change += dE
+					energy_change += dE ### !!! To match the implementation used in the single site sweep method 
 			else:
 				for j in range(nspins):
 					dE = MCstep(spins)
@@ -252,8 +252,6 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 
 ### Saves a compact output and is low memory usage during operation 
 ### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
-### Saves a compact output and is low memory usage during operation 
-### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
 ### If construct_seeds is used, this will automatically generate the initial and dynamics seeds as well by combining the J seed and replica index used as well as any passed initial_seed/dynamics_seed values 
 def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None,use_color_updates=False,construct_seeds=False):
 	L = int(L)
@@ -279,6 +277,9 @@ def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initi
 	latt.set_nn_J(1.,1.)
 	latt.set_nnn_J(Jnnn,p)
 	
+	### We now compress to sparse form to save memory 
+	latt.compress_to_csr() 
+	
 	nsweeps = int(nsweeps)
 
 	energies, magnetization, neel, stripes, qea, noise, snapshots = anneal_dynamics_lattice(
@@ -301,7 +302,10 @@ def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initi
 	### 6) Local noise for different distances vs time
 	### 7) Optional sampled spin snapshots
 	
+	### It becomes too costly to save the lattice object with each output. It grows as L^4 and quickly overwhelms storage. We will suppress the saving of this to disk as the lattice can be simply reproduced from seed 
+	### Instead in this argument we will save the seeds used 
+	seed_tuple = (J_seed, initial_seed,dynamics_seed)
 	with open(save_filename, 'wb') as out_file:
-		pickle.dump((latt,energies,magnetization,neel,stripes,qea,noise,snapshots), out_file) ### We store the compact observables and the lattice
+		pickle.dump((seed_tuple,energies,magnetization,neel,stripes,qea,noise,snapshots), out_file) ### We store the compact observables and the lattice
         	
       	
