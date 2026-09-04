@@ -3,31 +3,31 @@
 
 import numpy as np
 from scipy import stats
+import lattice_methods as lm
 
 
 cumulants_ref = [ 'X','Y','XX','XY','YY','XXX','XXY','XYY','YYY','XXXX','XXXY','XXYY','XYYY','YYYY']
 
 
 ### Computes local magnetic noise a distance d away given a stochastic realization of the spin configuration 
-def calc_local_noise(spins,ds,Lx,Ly):
+def calc_local_noise(spins,ds,lattice_or_Lx,Ly=None):
+	"""Compute the probe field from trajectories with site axis second-to-last.
+
+	A lattice object supplies native geometry.  Passing Lx, Ly remains supported
+	for legacy square-lattice callers.
+	"""
 	### Units and prefactors to keep track
 	mu0 = 1. ### vacuum permeability
 	muB = 1. ### magnetic moment in bohr magnetons 
 	a = 1. ### lattice constant 
 
-	### Computes local magnetic noise
-	### Assumes spin qubit is a distance d away in the center of the sample 
-
-	### The magnetization in the z direction a distance d away is given in terms of the spins as 
-	### B_z(t) = mu_0 mu_B mu_mat/(4 pi) sum_j S_j(t) (2d^2 - R_j^2)/(R_j^2 + d^2)^(3/2) 
-
-	X,Y = np.meshgrid(np.arange(Lx)-Lx//2, np.arange(Ly)-Ly//2,indexing='ij')
-
-	R = np.sqrt(X**2 + Y**2) 
-
-	R = R.ravel() 
-
-	kernels = (2.*ds[None,:]**2 - R[:,None]**2)/( R[:,None]**2 + ds[None,:]**2)**2.5 ### Has shape [Nspins, Nds] 
+	if hasattr(lattice_or_Lx, "magnetic_field_mask_zz"):
+		latt = lattice_or_Lx
+	else:
+		if Ly is None:
+			raise ValueError("Ly is required when passing legacy square-lattice dimensions.")
+		latt = lm.square_lattice(int(lattice_or_Lx),int(Ly))
+	kernels = latt.magnetic_field_mask_zz(ds)
 
 	noise = np.tensordot(spins,kernels,axes=[-2,0]) * mu0*muB/(4.*np.pi*a**3)
 	
@@ -86,20 +86,19 @@ def calc_cumulant(noise,times):
  
 ### This function will down sample the noise and perform averaging over blocks which allows the reduction of data size as well as enables direct calculation of echo phases 
 def down_sample(data,chop_size,sample_size):
-	### First we chop the data 
-	### We assume shape [....,N] where N is the number of time points 
-	data_chopped = data[...,chop_size:] 
-	
-	### Next we generate matrices for masking the data to implement the sample averaging 
-	ntimes = data_chopped.shape[-1] 
-	mask_matrix = np.zeros((ntimes,ntimes//sample_size))
-	for j in range(mask_matrix.shape[-1]):
-		mask_matrix[j*sample_size:(j*sample_size+sample_size),j] = 1. 
-		
-	### Time points in original MCS units 
-	times = np.arange(mask_matrix.shape[-1])*sample_size
-	
-	return np.tensordot(data_chopped,mask_matrix,axes=[-1,0])
+	### We assume shape [....,N] where N is the number of time points.
+	data = np.asarray(data)
+	chop_size = int(chop_size)
+	sample_size = 1 if sample_size is None or int(sample_size) <= 0 else int(sample_size)
+	if chop_size < 0 or chop_size >= data.shape[-1]:
+		raise ValueError("chop_size must leave at least one time point.")
+	data_chopped = data[...,chop_size:]
+	nblocks = data_chopped.shape[-1]//sample_size
+	if nblocks == 0:
+		raise ValueError("sample_size is larger than the remaining trajectory.")
+	### Block sums preserve the integrated phase while avoiding a dense O(N**2) mask.
+	trimmed = data_chopped[...,:nblocks*sample_size]
+	return trimmed.reshape(*trimmed.shape[:-1],nblocks,sample_size).sum(axis=-1)
 		
 		
 		
@@ -121,11 +120,12 @@ def extract_cumulants_Ramsey(noise_sampled):
 		filters[1,i,i:2*i] = 1.
 
 	echos = np.tensordot( noise_sampled,filters,axes=[-1,-1])
-	echos = np.rollaxis(echos, -2, 1)
-	means = np.mean(echos,axis=0)
+	### Put the two echo channels first and average only the sample/replica axis.
+	echos = np.moveaxis(echos,-2,0)
+	means = np.mean(echos,axis=1)
 
 	moments = np.zeros((14,*means.shape[1:]))
-	centered_echos = echos - means[None,...]
+	centered_echos = echos-means[:,None,...]
 	moments[:2,...] = means
 
 	for i in range(3):
@@ -150,7 +150,7 @@ def extract_cumulants_Ramsey(noise_sampled):
     
 ### Given the down-sampled noise this computes the first four cumulants of the noise as a function of echo delay 
 ### Built on Hahn sequence and the needed higher echos  
-def extract_cumulants_Hahn(noise_sampled):
+def extract_cumulants_Hahn(noise_sampled,enforce_Z2=False):
 
 	### Methods for processesing the cumulants of the Ramsey echo 
 
@@ -166,11 +166,14 @@ def extract_cumulants_Hahn(noise_sampled):
 		filters[1,i,2*i:4*i] = np.sign(np.arange(2*i) -i+0.5 )
 
 	echos = np.tensordot( noise_sampled,filters,axes=[-1,-1])
-	echos = np.rollaxis(echos, -2, 1)
-	means = np.mean(echos,axis=0)
+	### Put the two echo channels first and average only the sample/replica axis.
+	echos = np.moveaxis(echos,-2,0)
+	means = np.mean(echos,axis=1)
+	if enforce_Z2:
+		means = np.zeros_like(means)
 
 	moments = np.zeros((14,*means.shape[1:]))
-	centered_echos = echos - means[None,...]
+	centered_echos = echos-means[:,None,...]
 	moments[:2,...] = means
 
 	for i in range(3):
@@ -178,6 +181,8 @@ def extract_cumulants_Hahn(noise_sampled):
 
 	for i in range(4):
 		moments[5+i,...] = np.mean( (centered_echos[0,...])**(3-i)*(centered_echos[1,...])**i ,axis=0)
+		if enforce_Z2:
+			moments[5+i,...] = 0.
 
 	for i in range(5):
 		moments[9+i,...] = np.mean( (centered_echos[0,...])**(4-i)*(centered_echos[1,...])**i ,axis=0)
@@ -250,8 +255,7 @@ def order_parameters(mags,neels,stripes,chop_size=0):
 	### Magnetization
 	M_by_lattice = np.zeros((nseeds,nTs))
 	N_by_lattice = np.zeros((nseeds,nTs))
-	Sx_by_lattice = np.zeros((nseeds,nTs))
-	Sy_by_lattice = np.zeros((nseeds,nTs)) 
+	S_by_lattice = np.zeros((nseeds,nTs))
 	
 	if chop_size<=0: chop_size = int(nsweeps//3)
 	
@@ -259,13 +263,16 @@ def order_parameters(mags,neels,stripes,chop_size=0):
 		
 		M_by_lattice[i,:] = np.mean(np.abs(mags[i][:,:,-1]),axis=0)
 		N_by_lattice[i,:] = np.mean(np.abs(neels[i][:,:,-1]),axis=0)
-		Sx_by_lattice[i,:] = np.mean(np.abs(stripes[i][0,:,:,-1]),axis=0)
-		Sy_by_lattice[i,:] = np.mean(np.abs(stripes[i][1,:,:,-1]),axis=0)
+		stripe_values = np.asarray(stripes[i])
+		if stripe_values.ndim != 4 or stripe_values.shape[0] != nreplicas:
+			raise ValueError("Each stripe array must have shape (replica, component, temperature, time).")
+		### Sum the geometry-native stripe components, then average over replicas.
+		S_by_lattice[i,:] = np.mean(np.sum(np.abs(stripe_values[:,:,:,-1]),axis=1),axis=0)
 
 		
 	M = np.mean(M_by_lattice,axis=0) 
 	N = np.mean(N_by_lattice,axis=0)
-	S = np.mean(Sx_by_lattice + Sy_by_lattice,axis=0) 
+	S = np.mean(S_by_lattice,axis=0)
 	
 	
 	return M,N,S
@@ -298,74 +305,75 @@ def calc_noise_spectrum(noise,chop_size=0,center=True):
 	return ws,spectrum
 	
 	
-### Processes the cumulants and then averages over the lattice disorder realizations 
-### Assumed data of the form 
-### list[noises[....,time] ] where list runs over each lattice seed 
-### Returns the desired (2,2) fourth cumulant and a fitted time dependence after disorder averaging and the down-sampled echo times 
-### Noise is down-sampled by the specified amount which defaults to zero (very costly) 
-def process_cumulants(noise,sample_size=0):
-	nseeds = len(noise)
-	
-	Gamma2_by_lattice = [] 
-	Gamma4_by_lattice = [] 
-	times = None 
-	
-	for i in range(nseeds):
-	
-		### Sample the data down for cumulant calculations
-		noise_sampled = down_sample(noise[i],noise[i].shape[-1]//5,sample_size)
-		cumulants = extract_cumulants_Hahn(noise_sampled)
-		times = echo_times(noise_sampled,sample_size)
+def annealed_hahn_cumulants(noise,sample_size=1,enforce_Z2=False):
+	"""Compute echo cumulants after pooling replicas and disorder realizations.
 
-		Gamma2_by_lattice.append(cumulants[2,...])
-		Gamma4_by_lattice.append(cumulants[11,...])
-		
-	### Now we restack and average over disorder 
-	Gamma2 = np.mean(np.stack(Gamma2_by_lattice,axis=0),axis=0)
-	Gamma4 = np.mean(np.stack(Gamma4_by_lattice,axis=0),axis=0)
-	
-	### Now we fit the data
-		
-	### Fitting to a single power law
-	def fit_cumulant(t,y):
-	    
-		y_log = np.log(y)
-		t_log = np.log(t) 
-
-		fit = stats.linregress(t_log,y_log) 
-
-		return np.exp(fit.intercept +fit.slope*t_log), fit.intercept, fit.slope, fit.rvalue
+	``noise`` is a sequence over quenched disorder.  Each element must have a
+	leading replica axis and a trailing time axis.  Pooling those leading axes
+	before forming moments computes cumulants from the replica/disorder-combined
+	annealed MGF; it does not average already-formed per-disorder cumulants.
+	"""
+	if len(noise) == 0:
+		raise ValueError("At least one disorder realization is required.")
+	sample_size = 1 if sample_size is None or int(sample_size) <= 0 else int(sample_size)
+	sampled = []
+	reference_shape = None
+	for realization in noise:
+		realization = np.asarray(realization,dtype=float)
+		if realization.ndim < 2 or realization.shape[0] < 1:
+			raise ValueError("Each disorder realization must include a non-empty leading replica axis.")
+		reduced = down_sample(realization,realization.shape[-1]//5,sample_size)
+		if reference_shape is None:
+			reference_shape = reduced.shape[1:]
+		elif reduced.shape[1:] != reference_shape:
+			raise ValueError("All disorder realizations must have matching non-replica dimensions.")
+		sampled.append(reduced)
+	pooled_noise = np.concatenate(sampled,axis=0)
+	cumulants = extract_cumulants_Hahn(pooled_noise,enforce_Z2=enforce_Z2)
+	return echo_times(pooled_noise,sample_size),cumulants
 
 
-	### Perform fits 
-	fitted_data_Gamma2 = np.zeros_like(Gamma2[...,1:])
-	fitted_data_Gamma4 = np.zeros_like(Gamma4[...,1:])
-
-	intercepts_Gamma2 = np.zeros_like(Gamma2[...,0])
-	intercepts_Gamma4 = np.zeros_like(Gamma4[...,0])
-
-	slopes_Gamma2 = np.zeros_like(Gamma2[...,0])
-	slopes_Gamma4 = np.zeros_like(Gamma4[...,0])
-
-	r_vals_Gamma2 = np.zeros_like(Gamma2[...,0])
-	r_vals_Gamma4 = np.zeros_like(Gamma4[...,0])
-
-	### Infer shape of z and temperature indices 
-	ntemps, ndists, _ = Gamma2.shape 
-
-	for i in range(ndists):
-		for j in range(ntemps):
-			fitted_data_Gamma2[j,i,:],intercepts_Gamma2[j,i], slopes_Gamma2[j,i], r_vals_Gamma2[j,i] = fit_cumulant(times[1:],Gamma2[j,i,1:])
-			fitted_data_Gamma4[j,i,:],intercepts_Gamma4[j,i], slopes_Gamma4[j,i], r_vals_Gamma4[j,i] = fit_cumulant(times[1:],-Gamma4[j,i,1:]) ### We expect Gamma4 <0 so we fit the negative value to a power law 
-			fitted_data_Gamma4[j,i,:] *= -1 ### Flip the sign back 
-			intercepts_Gamma4[j,i] *= -1. ### Intercept also flips back 
-
-	### We return the cumulants, the times, and the fit results 
-	Gamma2_fit = {'fitted_data':fitted_data_Gamma2, 'intercepts':intercepts_Gamma2, 'slopes':slopes_Gamma2, 'rval':r_vals_Gamma2}
-	Gamma4_fit = {'fitted_data':fitted_data_Gamma4, 'intercepts':intercepts_Gamma4, 'slopes':slopes_Gamma4, 'rval':r_vals_Gamma4}
+def _fit_power_law(t,y):
+	valid = np.isfinite(t) & np.isfinite(y) & (t > 0.) & (y > 0.)
+	fitted = np.full_like(y,np.nan,dtype=float)
+	if np.count_nonzero(valid) < 2:
+		return fitted,np.nan,np.nan,np.nan
+	fit = stats.linregress(np.log(t[valid]),np.log(y[valid]))
+	fitted[valid] = np.exp(fit.intercept+fit.slope*np.log(t[valid]))
+	return fitted,fit.intercept,fit.slope,fit.rvalue
 
 
-	return times, Gamma2, Gamma4, Gamma2_fit, Gamma4_fit 
+def process_cumulants_av_MGF(noise,sample_size=1,enforce_Z2=False):
+	"""Return Hahn cumulants and fits from the annealed replica/disorder MGF."""
+	times,cumulants = annealed_hahn_cumulants(noise,sample_size,enforce_Z2=enforce_Z2)
+	echo_mean = cumulants[0,...]
+	Gamma2 = cumulants[2,...]
+	Gamma4 = cumulants[11,...]
+	if Gamma2.ndim != 3:
+		raise ValueError("Expected cumulants with shape (temperature, distance, delay).")
+
+	fit_shape = Gamma2[...,1:].shape
+	Gamma2_fit = {
+		'fitted_data':np.full(fit_shape,np.nan),
+		'intercepts':np.full(Gamma2.shape[:-1],np.nan),
+		'slopes':np.full(Gamma2.shape[:-1],np.nan),
+		'rval':np.full(Gamma2.shape[:-1],np.nan),
+	}
+	Gamma4_fit = {key:value.copy() for key,value in Gamma2_fit.items()}
+	for index in np.ndindex(Gamma2.shape[:-1]):
+		fit2 = _fit_power_law(times[1:],Gamma2[index][1:])
+		fit4 = _fit_power_law(times[1:],-Gamma4[index][1:])
+		Gamma2_fit['fitted_data'][index] = fit2[0]
+		Gamma4_fit['fitted_data'][index] = -fit4[0]
+		for fit_name,value_index in [('intercepts',1),('slopes',2),('rval',3)]:
+			Gamma2_fit[fit_name][index] = fit2[value_index]
+			Gamma4_fit[fit_name][index] = fit4[value_index]
+	return times,Gamma2,Gamma4,Gamma2_fit,Gamma4_fit,echo_mean
+
+
+def process_cumulants(noise,sample_size=1):
+	"""Backwards-compatible five-value wrapper using the correct annealed MGF."""
+	return process_cumulants_av_MGF(noise,sample_size)[:5]
 	
 ### Given lattice parameters determines the mean and variance of Jnnn 
 def Jnnn_stats(latt):
@@ -399,4 +407,3 @@ def latt_nnn_dist(lattices):
     
 	
 	
-

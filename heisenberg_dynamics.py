@@ -5,6 +5,10 @@
 import numpy as np
 import lattice_methods as lm
 import pickle
+from simulation_utils import compact_result_for_storage, resolve_replica_seeds
+
+
+__version__ = "0.1.0"
 
 PI = np.pi
 TWOPI = 2.*PI 
@@ -158,13 +162,9 @@ class dynamics:
 		return np.stack([theta, phi])
 
 	def _exchange_field(self, spins):
-		### B_i = -dH/dS_i for H_ex = -1/2 sum_ij J_ij S_i . S_j.
-		### Use the lattice object's partner lists instead of rebuilding graph data here
-		field = np.zeros_like(spins)
-		for i in self.latt.sites:
-			for j in self.latt.partners[i]:
-				field[:, i] += self.latt.J_matrix[j, i] * spins[:, j]
-		return field
+		### Positive J is antiferromagnetic: H_ex = +1/2 sum_ij J_ij S_i . S_j.
+		### The effective field is -dH/dS, evaluated for every site in O(bonds).
+		return -np.asarray(self.latt.J_matrix.T @ spins.T).T
 
 	def _anisotropy_field(self, spins):
 		### H_aniso = K sum_i Sz_i^2, so negative K is easy-axis.
@@ -220,9 +220,8 @@ class dynamics:
 		if spins is None:
 			spins = self.spins
 
-		### TODO: Check exchange sign convention before using this dynamics quantitatively
-		### Glauber positive J currently corresponds to antiferromagnetic coupling
-		### Reuse the sparse exchange field so energy has the same scaling as dynamics
+		### Since _exchange_field = -dH_ex/dS, this evaluates H_ex without
+		### introducing a second independent sign convention.
 		exchange = -0.5 * np.sum(spins * self._exchange_field(spins))
 		anisotropy = self.anisotropy * np.sum(spins[2, :]**2)
 		return exchange + anisotropy
@@ -234,22 +233,14 @@ class dynamics:
 		return np.mean(spins, axis=1)
 
 	def neel_order(self, spins=None):
-		### Staggered magnetization for the current square-lattice convention
+		return self.order_parameters(spins)["neel"]
+
+	def order_parameters(self, spins=None):
 		if spins is None:
 			spins = self.spins
-
-		mask = self.latt.neel_mask()
-		return np.mean(spins * mask[None, :], axis=1)
-
-	def stripe_order(self, spins=None):
-		### Stripe magnetization vectors along X and Y stripe masks
-		if spins is None:
-			spins = self.spins
-
-		stripe_x_mask, stripe_y_mask = self.latt.stripe_masks()
-		stripe_x = np.mean(spins * stripe_x_mask[None, :], axis=1)
-		stripe_y = np.mean(spins * stripe_y_mask[None, :], axis=1)
-		return np.stack([stripe_x, stripe_y])
+		names, masks = self.latt.order_parameter_masks()
+		values = np.einsum("on,an->oa", masks, spins)/self.latt.N
+		return {name:values[i] for i,name in enumerate(names)}
 
 	def local_field(self, spins=None):
 		### Local field from the lattice-provided dipolar tensor
@@ -271,8 +262,10 @@ class dynamics:
 
 		energies = np.zeros(self.nsteps)
 		magnetizations = np.zeros((self.nsteps, 3))
-		neels = np.zeros((self.nsteps, 3))
-		stripes = np.zeros((2,self.nsteps,3))
+		order_names = self.latt.order_parameter_masks()[0]
+		observables = {"magnetization":magnetizations}
+		for name in order_names:
+			observables[name] = np.zeros((self.nsteps,3))
 		local_field = None
 		if self.distances is not None:
 			local_field = np.zeros((3, len(self.distances), self.nsteps))
@@ -296,8 +289,9 @@ class dynamics:
 			spins = self.spins
 			energies[i] = self.energy(spins)
 			magnetizations[i, :] = self.magnetization(spins)
-			neels[i, :] = self.neel_order(spins)
-			stripes[:,i,:] = self.stripe_order(spins)
+			orders = self.order_parameters(spins)
+			for name,value in orders.items():
+				observables[name][i,:] = value
 			if local_field is not None:
 				local_field[...,i] = self.local_field(spins)
 			if i in snapshot_indices:
@@ -307,7 +301,26 @@ class dynamics:
 		frozen_moment /= float(self.nsteps)
 		q_ea = np.mean(np.sum(frozen_moment**2, axis=0))
 
-		return energies, magnetizations, neels, stripes, q_ea, local_field, snapshots
+		return {
+			"format_version":2,
+			"spin_model":"heisenberg",
+			"module_versions":{
+				"lattice_methods":lm.__version__,
+				"heisenberg_dynamics":__version__,
+			},
+			"dynamics_parameters":{
+				"temperature":self.temp,
+				"dt":self.dt,
+				"gilbert":self.gilbert,
+				"anisotropy":self.anisotropy,
+			},
+			"lattice":self.latt,
+			"energy":energies,
+			"observables":observables,
+			"q_ea":q_ea,
+			"local_field":local_field,
+			"snapshots":snapshots,
+		}
 
 
 def anneal_dynamics_lattice(
@@ -341,9 +354,10 @@ def anneal_dynamics_lattice(
 				raise ValueError("snapshot_steps cannot contain duplicate step indices.")
 
 	energies = np.zeros((nT, nsteps))
-	magnetization = np.zeros((nT, nsteps, 3))
-	neel = np.zeros((nT, nsteps, 3))
-	stripes = np.zeros((2,nT,nsteps,3))
+	order_names = lattice.order_parameter_masks()[0]
+	observables = {"magnetization":np.zeros((nT,nsteps,3))}
+	for name in order_names:
+		observables[name] = np.zeros((nT,nsteps,3))
 	local_field = None
 	if distances is not None:
 		local_field = np.zeros((nT, 3, len(distances), nsteps))
@@ -379,23 +393,40 @@ def anneal_dynamics_lattice(
 			sim.set_rng(dynamics_rng, seed=dynamics_seed)
 
 
-		run_energies, run_mags, run_neel, run_stripes, run_qea, run_local_field, run_snapshots = sim.run(
+		run_result = sim.run(
 			snapshot_steps=snapshot_steps,
 		)
 
 		previous_angles = sim.angles
 
-		energies[n, :] = run_energies
-		magnetization[n, :, :] = run_mags
-		neel[n, :, :] = run_neel
-		stripes[:,n,:,:] = run_stripes
+		energies[n, :] = run_result["energy"]
+		for name in observables:
+			observables[name][n,...] = run_result["observables"][name]
 		if local_field is not None:
-			local_field[n, ...] = run_local_field
+			local_field[n, ...] = run_result["local_field"]
 		if snapshots is not None:
-			snapshots[n, ...] = run_snapshots
-		qea[n] = run_qea
+			snapshots[n, ...] = run_result["snapshots"]
+		qea[n] = run_result["q_ea"]
 
-	return energies, magnetization, neel, stripes, qea, local_field, snapshots
+	return {
+		"format_version":2,
+		"spin_model":"heisenberg",
+		"module_versions":{
+			"lattice_methods":lm.__version__,
+			"heisenberg_dynamics":__version__,
+		},
+		"dynamics_parameters":{
+			"dt":float(dt),
+			"gilbert":float(gilbert),
+			"anisotropy":float(anisotropy),
+		},
+		"lattice":lattice,
+		"energy":energies,
+		"observables":observables,
+		"q_ea":qea,
+		"local_field":local_field,
+		"snapshots":snapshots,
+	}
 
 
 ### Saves a compact output and is low memory usage during operation
@@ -416,17 +447,25 @@ def run_sims(
 	initial_seed=None,
 	dynamics_seed=None,
 	snapshot_sweeps=None,
+	geometry="square",
+	Ly=None,
+	construct_seeds=False,
 ):
 	L = int(L)
+	Ly = L if Ly is None else int(Ly)
 	J_seed = int(J_seed)
 	nsteps = int(nsteps)
 	replica = int(replica)
+	initial_seed,dynamics_seed = resolve_replica_seeds(
+		J_seed,replica,initial_seed,dynamics_seed,construct_seeds,
+	)
 
 	### Build the lattice internally so batch jobs only pass simple parameters
-	latt = lm.lattice(L)
+	latt = lm.make_lattice(geometry,L,Ly=Ly)
 	latt.set_seed(J_seed)
 	latt.set_nn_J(1.,1.)
 	latt.set_nnn_J(Jnnn,p)
+	latt.compress_to_csr()
 
 	results = anneal_dynamics_lattice(
 		latt,
@@ -441,7 +480,9 @@ def run_sims(
 		snapshot_steps=snapshot_sweeps,
 	)
 
-	### Save only compact observables and optional requested snapshots
+	### Save compact observables plus enough metadata to rebuild the lattice.
+	stored_results = compact_result_for_storage(
+		results,J_seed,replica,initial_seed,dynamics_seed,construct_seeds,
+	)
 	with open(save_filename, 'wb') as out_file:
-		energies, magnetization, neel, stripes, qea, local_field, snapshots = results
-		pickle.dump((latt, energies, magnetization, neel, stripes, qea, local_field, snapshots), out_file)
+		pickle.dump(stored_results,out_file)

@@ -1,12 +1,66 @@
 import numpy as np
 import glauber
-import project_run_method as prm
+#import project_run_method as prm
 import noise_methods as nm
 from scipy import stats
 
 from matplotlib import pyplot as plt 
 from matplotlib import cm 
 from matplotlib import colors as mclr
+
+
+def plot_lattice(lattice,ax=None,shells=('nn',),show_periodic_bonds=False,site_color='white'):
+	"""Plot lattice sites and selected connectivity shells without spin data."""
+	if ax is None:
+		fig, ax = plt.subplots()
+	else:
+		fig = ax.figure
+	positions = np.asarray(lattice.positions,dtype=float)
+	styles = ['-','--',':','-.']
+	colors = ['0.55','0.72','0.82','0.9'] ### !!! Codex: I don't understand what these colors govern. Please explain. Also, is it possible to only show/color bonds which are non-zero?
+	for shell_index,shell in enumerate(shells):
+		for i,j in lattice.edges(shell):
+			if show_periodic_bonds or not lattice.edge_crosses_boundary(i,j):
+				p0,p1 = positions[i],positions[j]
+				ax.plot(
+					[p0[0],p1[0]],[p0[1],p1[1]],
+					styles[shell_index % len(styles)],
+					color=colors[shell_index % len(colors)],linewidth=1.,zorder=0,
+				)
+	sites = ax.scatter(
+		positions[:,0],positions[:,1],c=site_color,s=42,
+		edgecolors='black',linewidths=.5,zorder=2,
+	)
+	ax.set_aspect('equal')
+	ax.set_xlabel(r'$x/a$')
+	ax.set_ylabel(r'$y/a$')
+	return fig,ax,sites
+
+
+def plot_spin_configuration(lattice,spins,ax=None,cmap='coolwarm'):
+	"""Plot Ising or Heisenberg spins at native lattice positions without bonds."""
+	spin_values = np.asarray(spins,dtype=float)
+	if ax is None:
+		fig,ax = plt.subplots()
+	else:
+		fig = ax.figure
+	positions = np.asarray(lattice.positions,dtype=float)
+	if spin_values.shape == (lattice.N,):
+		colors = spin_values
+		in_plane = None
+	elif spin_values.shape == (3,lattice.N):
+		colors = spin_values[2]
+		in_plane = spin_values[:2]
+	else:
+		raise ValueError(f"spins must have shape ({lattice.N},) or (3, {lattice.N}).")
+
+	scatter = ax.scatter(positions[:,0],positions[:,1],c=colors,cmap=cmap,vmin=-1.,vmax=1.,s=55,edgecolors='black',linewidths=.4,zorder=2)
+	if in_plane is not None:
+		ax.quiver(positions[:,0],positions[:,1],in_plane[0],in_plane[1],angles='xy',scale_units='xy',scale=1.8,width=.006,zorder=3)
+	ax.set_aspect('equal')
+	ax.set_xlabel(r'$x/a$')
+	ax.set_ylabel(r'$y/a$')
+	return fig, ax, scatter
 
 def run_rc_defaul():
 	plt.rc('font', family = 'Times New Roman')
@@ -467,67 +521,67 @@ def plot_schedule(energy, mag, neel, temps, area,replicas = [0],mag_window = 100
 		return plot_schedule_neel(energy, mag, neel, temps,area,replicas,mag_window)
 
 
-def run_plot_suite_nnn(timestamps,sample_size,z_indxs,temp_indxs,plotting_time_step,save_figs=False,window=100):
-	### Load data sets 
-	print("Loading data sets")
-	energy_list = [] 
-	mag_list = []
-	q_ea_list = []
-	noise_list = []
+# def run_plot_suite_nnn(timestamps,sample_size,z_indxs,temp_indxs,plotting_time_step,save_figs=False,window=100):
+# 	### Load data sets 
+# 	print("Loading data sets")
+# 	energy_list = [] 
+# 	mag_list = []
+# 	q_ea_list = []
+# 	noise_list = []
 
-	for timestamp in timestamps:
-		(Lx,Ly),temps,distances,energy,mag,q_ea,noise = prm.process_anneal_observables(timestamp)
-		ntemps = len(temps)
-		print(f"Temperatures per replica: {ntemps}")
-		ndists = len(distances)
-		nreplicas = energy.shape[0]
-		nsweeps = energy.shape[-1]
-		print(f"Sweeps per epoch: {nsweeps}")
-		energy_list.append(energy)
-		mag_list.append(mag)
-		q_ea_list.append(q_ea)
-		noise_list.append(noise)
+# 	for timestamp in timestamps:
+# 		(Lx,Ly),temps,distances,energy,mag,q_ea,noise = prm.process_anneal_observables(timestamp)
+# 		ntemps = len(temps)
+# 		print(f"Temperatures per replica: {ntemps}")
+# 		ndists = len(distances)
+# 		nreplicas = energy.shape[0]
+# 		nsweeps = energy.shape[-1]
+# 		print(f"Sweeps per epoch: {nsweeps}")
+# 		energy_list.append(energy)
+# 		mag_list.append(mag)
+# 		q_ea_list.append(q_ea)
+# 		noise_list.append(noise)
 
-	energy = np.concatenate(energy_list)
-	mag = np.concatenate(mag_list)
-	q_ea = np.concatenate(q_ea_list)
-	noise = np.concatenate(noise_list)
+# 	energy = np.concatenate(energy_list)
+# 	mag = np.concatenate(mag_list)
+# 	q_ea = np.concatenate(q_ea_list)
+# 	noise = np.concatenate(noise_list)
 	
-	### Annealing schedule figure 	
-	schedule_fig = pm.plot_schedule(energy,mag,temps,Lx*Ly,mag_window)
+# 	### Annealing schedule figure 	
+# 	schedule_fig = pm.plot_schedule(energy,mag,temps,Lx*Ly,mag_window)
 	
-	### Frozen moment figures 
-	frozen_fig = pm.plot_frozen_moment(temps,distances,q_ea,noise)
+# 	### Frozen moment figures 
+# 	frozen_fig = pm.plot_frozen_moment(temps,distances,q_ea,noise)
 	
-	### Noise spectra figures
-	spectra_figs = pm.plot_noise_spectra(temps,distances,noise,logx=True,logy=True) 
+# 	### Noise spectra figures
+# 	spectra_figs = pm.plot_noise_spectra(temps,distances,noise,logx=True,logy=True) 
 	
-	### Cumulant figures
-	cumulant_figs = pm.plot_cumulants(temps,distances,noise,sample_size,z_indxs,temp_indxs,plotting_time_step)
+# 	### Cumulant figures
+# 	cumulant_figs = pm.plot_cumulants(temps,distances,noise,sample_size,z_indxs,temp_indxs,plotting_time_step)
 	
-	### Poor mans approach to figure saving for now
-	fig_directory_path = "/home/jcurtis/Projects/SpinGlassNoise/figs/" + "".join([ timestamp[-5:]+"_" for timestamp in timestamps ])[:-1]+"/"
+# 	### Poor mans approach to figure saving for now
+# 	fig_directory_path = "/home/jcurtis/Projects/SpinGlassNoise/figs/" + "".join([ timestamp[-5:]+"_" for timestamp in timestamps ])[:-1]+"/"
 
-	if not os.path.isdir(fig_directory_path):
-		os.makedirs(fig_directory_path)
+# 	if not os.path.isdir(fig_directory_path):
+# 		os.makedirs(fig_directory_path)
 
 		
-	if save_figs:
-		for fig,label in schedule_fig:
-			fig_path = fig_directory_path + label+".pdf"
-			fig.savefig(fig_path,bbox_inches='tight') 
+# 	if save_figs:
+# 		for fig,label in schedule_fig:
+# 			fig_path = fig_directory_path + label+".pdf"
+# 			fig.savefig(fig_path,bbox_inches='tight') 
 
-		for fig,label in frozen_fig:
-			fig_path = fig_directory_path + label+".pdf"
-			fig.savefig(fig_path,bbox_inches='tight')
+# 		for fig,label in frozen_fig:
+# 			fig_path = fig_directory_path + label+".pdf"
+# 			fig.savefig(fig_path,bbox_inches='tight')
 
-		for fig,label in spectra_figs:
-			fig_path = fig_directory_path + label+".pdf"
-			fig.savefig(fig_path,bbox_inches='tight')
+# 		for fig,label in spectra_figs:
+# 			fig_path = fig_directory_path + label+".pdf"
+# 			fig.savefig(fig_path,bbox_inches='tight')
 
-		for fig,label in cumulant_figs:
-			fig_path = fig_directory_path + label+".pdf"
-			fig.savefig(fig_path,bbox_inches='tight')
+# 		for fig,label in cumulant_figs:
+# 			fig_path = fig_directory_path + label+".pdf"
+# 			fig.savefig(fig_path,bbox_inches='tight')
 
 
 	

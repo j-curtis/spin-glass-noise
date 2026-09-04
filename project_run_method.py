@@ -5,8 +5,31 @@ import numpy as np
 from scipy import integrate as intg
 import pickle 
 import glauber
+import lattice_methods as lm
 import noise_methods as nm 
 from demler_tools.file_manager import path_management, file_management, io
+
+
+def compact_result_legacy_views(data):
+	"""Expose legacy arrays while accepting named compact result dictionaries."""
+	if not isinstance(data,dict):
+		raise TypeError("data must be a compact result dictionary.")
+	lattice = data.get("lattice")
+	if lattice is None:
+		lattice = lm.lattice_from_spec(data["lattice_spec"])
+	observables = data["observables"]
+	stripe_names = [
+		name for name in lattice.order_names
+		if name.startswith("stripe_") or name.startswith("stripy_")
+	]
+	stripes = None
+	if stripe_names:
+		stripes = np.stack([observables[name] for name in stripe_names],axis=0)
+	return (
+		lattice,data["energy"],observables["magnetization"],
+		observables.get("neel"),stripes,data["q_ea"],
+		data["local_field"],data["snapshots"],
+	)
 
 
 ### Demler tools simulation method which saves the entire spin trajectory (costly in terms of storage)
@@ -707,20 +730,28 @@ def process_nnn_jobs_path(file_path,timestamp,get_replicas=None,sample_step=None
 
 	for job in range(job_no):
 		inputs,data = fm.file_management_local_backend.read_run_raw_data(file_path+timestamp,run_index=job)
-		if len(data) == 8:
-		    	latt, energy, mag, neel, stripes, qea, noise, snapshots = data
+		if isinstance(data,dict):
+			latt,energy,mag,neel,stripes,qea,noise,snapshots = compact_result_legacy_views(data)
+			if sample_step is not None:
+				energy = nm.down_sample(energy,chop_size=0,sample_size=sample_step)
+				mag = nm.down_sample(mag,chop_size=0,sample_size=sample_step)
+				neel = nm.down_sample(neel,chop_size=0,sample_size=sample_step)
+				stripes = nm.down_sample(stripes,chop_size=0,sample_size=sample_step)
+				noise = nm.down_sample(noise,chop_size=0,sample_size=sample_step)
+		elif len(data) == 8:
+			latt, energy, mag, neel, stripes, qea, noise, snapshots = data
 			### Here we downsample noise and other observables 
 			if sample_step is not None:
 				energy = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
-				mag = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
+				mag = nm.down_sample(mag,chop_size=0,sample_size = sample_step)
 				neel = nm.down_sample(neel,chop_size=0,sample_size = sample_step)
 				stripes = nm.down_sample(stripes,chop_size=0,sample_size = sample_step) 
 				noise = nm.down_sample(noise,chop_size=0,sample_size = sample_step)
-            
+
 		else:
-		    raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
-        	
-        	job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }
+			raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
+
+		job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }
 
 		Jnnn = inputs['Jnnn']
 		pnnn = inputs['p']
@@ -747,7 +778,7 @@ def process_nnn_jobs_path(file_path,timestamp,get_replicas=None,sample_step=None
 		if Jnnn not in jobs_by_Jnnn.keys():
 			jobs_by_Jnnn[Jnnn] = [ job ]
 
-        	else: 
+		else:
 			(jobs_by_Jnnn[Jnnn]).append(job)
         
 		if pnnn not in jobs_by_pnnn.keys():
@@ -862,32 +893,30 @@ def process_nnn_jobs(timestamp,get_replicas=None,sample_step=None):
     extract_new_format = False
     for job in range(job_no):
         inputs,data = io.get_results(timestamp=timestamp,run_index=job)
-        if len(data) == 6:
+        if isinstance(data,dict):
+            latt, energy, mag, neel, stripes, qea, noise, snapshots = compact_result_legacy_views(data)
+            extract_new_format = True
+        elif len(data) == 6:
             latt, energy, mag, neel, qea, noise = data
-
-            ### Here we downsample noise and other observables 
-            if sample_step is not None:
-            	energy = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
-            	mag = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
-            	neel = nm.down_sample(neel,chop_size=0,sample_size = sample_step)
-            	noise = nm.down_sample(noise,chop_size=0,sample_size = sample_step)
-            	
             stripes = None
             snapshots = None
         elif len(data) == 8:
             latt, energy, mag, neel, stripes, qea, noise, snapshots = data
             extract_new_format = True
-            
-            ### Here we downsample noise and other observables 
-            if sample_step is not None:
-            	energy = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
-            	mag = nm.down_sample(energy,chop_size=0,sample_size = sample_step)
-            	neel = nm.down_sample(neel,chop_size=0,sample_size = sample_step)
-            	stripes = nm.down_sample(stripes,chop_size=0,sample_size = sample_step) 
-            	noise = nm.down_sample(noise,chop_size=0,sample_size = sample_step)
-            
         else:
             raise ValueError(f"Unsupported result tuple length {len(data)} for job {job}.")
+
+        ### Downsample all time-dependent observables after normalizing the format.
+        if sample_step is not None:
+            energy = nm.down_sample(energy,chop_size=0,sample_size=sample_step)
+            mag = nm.down_sample(mag,chop_size=0,sample_size=sample_step)
+            if neel is not None:
+                neel = nm.down_sample(neel,chop_size=0,sample_size=sample_step)
+            if stripes is not None:
+                stripes = nm.down_sample(stripes,chop_size=0,sample_size=sample_step)
+            if noise is not None:
+                noise = nm.down_sample(noise,chop_size=0,sample_size=sample_step)
+
         job_data = {'latt':latt, 'energy':energy, 'mag':mag, 'neel':neel, 'stripes':stripes, 'qea':qea, 'noise':noise, 'snapshots':snapshots }
 
         Jnnn = inputs['Jnnn']
@@ -1001,16 +1030,6 @@ def process_nnn_jobs(timestamp,get_replicas=None,sample_step=None):
         return params, lattices, energies, mags, neels, stripes, qeas, noises, snapshots
 
     return params, lattices, energies, mags, neels, qeas, noises
-
-
-
-
-
-
-
-
-
-
 
 
 

@@ -9,18 +9,26 @@
 import numpy as np 
 import lattice_methods as lm
 import pickle
+from simulation_utils import compact_result_for_storage, resolve_replica_seeds
+
+
+__version__ = "0.1.0"
 
 ### This method will initialize an array of the chosen size to either a random or uniform state 
 ### We store the spin in a one dimensional flattened array 
-def initialize_spins(Lx,Ly,random=False,seed=None):
-	spins = np.ones((Lx,Ly),dtype=np.int8)
+def initialize_spins(nspins,random=False,seed=None):
+	"""Initialize an explicitly supplied number of Ising spins."""
+	nspins = int(nspins)
+	if nspins <= 0:
+		raise ValueError("nspins must be positive.")
+	spins = np.ones(nspins,dtype=np.int8)
 
 	rng = np.random.default_rng()
 	if seed is not None: rng = np.random.default_rng(seed)
 
-	if random: spins = rng.choice(np.array([-1,1],dtype=np.int8),Lx*Ly)
+	if random: spins = rng.choice(np.array([-1,1],dtype=np.int8),nspins)
 
-	return spins.flatten()
+	return spins
 
 ### This method computes the magnetization of a flattened spin configuration
 def calc_mag(spins):
@@ -69,44 +77,19 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 	energies = np.zeros((nTs,nsweeps))
 	mags = np.zeros((nTs,nsweeps))
 	q_eas = np.zeros(nTs)
-	neels = np.zeros((nTs,nsweeps))
-	stripes = np.zeros((2,nTs,nsweeps))
+	order_names, order_masks = lattice.order_parameter_masks()
+	observables = {"magnetization":mags}
+	for name in order_names:
+		observables[name] = np.zeros((nTs,nsweeps))
 	noises = np.zeros((nTs,ndists,nsweeps))
 
-
-	### Method for computing local magnetic field noise 
 
 	### Units and prefactors to keep track
 	mu0 = 1. ### vacuum permeability
 	muB = 1. ### magnetic moment in bohr magnetons 
 	a = 1. ### lattice constant 
 
-	### ASSUME SQUARE GRID 
-	Lx = int(lattice.L)
-	Ly = int(lattice.L)
-
-	### Computes local magnetic noise
-	### Assumes spin qubit is a distance d away in the center of the sample 
-
-	### The magnetization in the z direction a distance d away is given in terms of the spins as 
-	### B_z(t) = mu_0 mu_B mu_mat/(4 pi) sum_j S_j(t) (2d^2 - R_j^2)/(R_j^2 + d^2)^(5/2) 
-
-	X,Y = np.meshgrid(np.arange(Lx)-Lx//2, np.arange(Ly)-Ly//2,indexing='ij')
-
-	R = np.sqrt(X**2 + Y**2) 
-
-	R = R.ravel() 
-
-	kernels = (2.*distances[None,:]**2 - R[:,None]**2)/( R[:,None]**2 + distances[None,:]**2)**2.5 ### Has shape [Nspins, Nds] 
-
-	### Mask to compute Neel order
-	neel_mask = (X+Y).astype(int)
-	neel_mask = neel_mask.ravel() 
-	neel_mask = (-1.*np.ones(nspins,dtype=int))**neel_mask
-
-	### Masks to compute stripe order along X and Y, respectively
-	stripe_x_mask = np.where((X.astype(int).ravel() % 2) == 0, 1., -1.)
-	stripe_y_mask = np.where((Y.astype(int).ravel() % 2) == 0, 1., -1.)
+	kernels = lattice.magnetic_field_mask_zz(distances)
 	
 	### For a single spin configuration this returns an array of the magnetic field noises at each distance at each time point
 	def local_noise_field(spins):
@@ -129,15 +112,15 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 		for site in lattice.sites:
 			partners = np.asarray(lattice.partners[site],dtype=int)
 			neighbor_matrix[site,:len(partners)] = partners
-			coupling_matrix[site,:len(partners)] = lattice.J_matrix[partners,site]
+			coupling_matrix[site,:len(partners)] = lattice.couplings_to_site(partners,site)
 
 	### Implements a single step which there are then Lx x Ly of in a sweep
 	### Modified to only in-place flip
 	def MCstep(spins):
 		r = rng.choice(np.arange(nspins))
 
-		neighbors = lattice.partners[r]
-		curie_field = sum(lattice.J_matrix[i, r] * spins[i] for i in neighbors)
+		neighbors = np.asarray(lattice.partners[r],dtype=int)
+		curie_field = np.dot(lattice.couplings_to_site(neighbors,r),spins[neighbors])
 
 		dE = -2.0 * curie_field * spins[r]
 		betadE = dE / T
@@ -176,7 +159,7 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 		return 0.0
 	
 	### Random initial state for each replica 
-	spins = initialize_spins(nspins,1,random=True,seed=initial_seed)
+	spins = initialize_spins(nspins,random=True,seed=initial_seed)
 	
 	for n in range(nTs):
 		T = temperature_schedule[n]
@@ -184,9 +167,9 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 		### Just first time step we compute the observables for the entire system
 		energies[n,0] = calc_energy(spins,lattice.J_matrix)
 		mags[n,0] = calc_mag(spins) 
-		neels[n,0] = order_parameter(spins,neel_mask)
-		stripes[0,n,0] = order_parameter(spins,stripe_x_mask)
-		stripes[1,n,0] = order_parameter(spins,stripe_y_mask)
+		order_values = order_masks @ spins / nspins
+		for order_index,name in enumerate(order_names):
+			observables[name][n,0] = order_values[order_index]
 		if 0 in snapshot_indices:
 			snapshots[n,snapshot_indices[0],:] = spins
 
@@ -221,9 +204,9 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 			mags[n,i] = calc_mag(spins) 
 
 			
-			neels[n,i] = order_parameter(spins,neel_mask)
-			stripes[0,n,i] = order_parameter(spins,stripe_x_mask)
-			stripes[1,n,i] = order_parameter(spins,stripe_y_mask)
+			order_values = order_masks @ spins / nspins
+			for order_index,name in enumerate(order_names):
+				observables[name][n,i] = order_values[order_index]
 
 			### Update the frozen moment if we are past the chop window 
 			if i >= chop_size:
@@ -246,25 +229,45 @@ def anneal_dynamics_lattice(lattice,nsweeps,temperature_schedule,distances,initi
 			q_eas[n] = np.mean(frozen_moment**2) ### Average over volume 
 		
 
-	return energies, mags, neels, stripes, q_eas, noises, snapshots
+	return {
+		"format_version":2,
+		"spin_model":"ising",
+		"module_versions":{
+			"lattice_methods":lm.__version__,
+			"glauber_dynamics":__version__,
+		},
+		"dynamics_parameters":{"use_color_updates":bool(use_color_updates)},
+		"lattice":lattice,
+		"energy":energies,
+		"observables":observables,
+		"q_ea":q_eas,
+		"local_field":noises,
+		"snapshots":snapshots,
+	}
 
 
 
 ### Saves a compact output and is low memory usage during operation 
 ### Due to current demler_tools restrictions cannot pass arbitrary objects to run method so instead we pass a limited set of parameters and built object on the fly 
 
-def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None,use_color_updates=False):
+def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initial_seed=None,dynamics_seed=None,snapshot_sweeps=None,use_color_updates=False,geometry="square",Ly=None,construct_seeds=False):
 	L = int(L)
+	Ly = L if Ly is None else int(Ly)
 	J_seed = int(J_seed)
+	replica = int(replica)
+	initial_seed,dynamics_seed = resolve_replica_seeds(
+		J_seed,replica,initial_seed,dynamics_seed,construct_seeds,
+	)
 
-	latt = lm.lattice(L)
+	latt = lm.make_lattice(geometry,L,Ly=Ly)
 	latt.set_seed(J_seed)
 	latt.set_nn_J(1.,1.)
 	latt.set_nnn_J(Jnnn,p)
+	latt.compress_to_csr()
 	
 	nsweeps = int(nsweeps)
 
-	energies, magnetization, neel, stripes, qea, noise, snapshots = anneal_dynamics_lattice(
+	results = anneal_dynamics_lattice(
 		latt,
 		nsweeps,
 		temps,
@@ -284,7 +287,10 @@ def run_sims(save_filename,L,Jnnn,p,J_seed,nsweeps,temps,distances,replica,initi
 	### 6) Local noise for different distances vs time
 	### 7) Optional sampled spin snapshots
 	
+	stored_results = compact_result_for_storage(
+		results,J_seed,replica,initial_seed,dynamics_seed,construct_seeds,
+	)
 	with open(save_filename, 'wb') as out_file:
-		pickle.dump((latt,energies,magnetization,neel,stripes,qea,noise,snapshots), out_file) ### We store the compact observables and the lattice
+		pickle.dump(stored_results,out_file)
         	
       	
