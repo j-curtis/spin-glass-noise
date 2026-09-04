@@ -158,3 +158,15 @@ def test_stripe_postprocessing_uses_replica_first_axis():
 	stripes[0][0,1,:,-1] = [3.,4.]
 	_,_,stripe_order = nm.order_parameters(mags,neels,stripes)
 	np.testing.assert_array_equal(stripe_order,[4.,6.])
+
+
+def test_thermodynamics_allows_explicit_zero_chop():
+	energies = [np.array([[
+		[0.,10.,0.,0.,0.,0.],
+		[0.,20.,0.,0.,0.,0.],
+	]])]
+	temperatures = np.array([1.,2.])
+	_,default_variance,_ = nm.thermodynamics(energies,temperatures)
+	_,full_variance,_ = nm.thermodynamics(energies,temperatures,chop_size=0)
+	np.testing.assert_array_equal(default_variance,[0.,0.])
+	assert np.all(full_variance > 0.)
